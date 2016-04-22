@@ -25,6 +25,7 @@ import edu.stanford.nlp.util.CoreMap;
 import edu.stanford.nlp.util.PropertiesUtils;
 import edu.stanford.nlp.util.RuntimeInterruptedException;
 import edu.stanford.nlp.util.StringUtils;
+import edu.stanford.nlp.util.logging.Redwood;
 
 /**
  * Subclass of ClassifierCombiner that behaves like a NER, by copying
@@ -34,7 +35,10 @@ import edu.stanford.nlp.util.StringUtils;
  *
  * @author Mihai Surdeanu
  */
-public class NERClassifierCombiner extends ClassifierCombiner<CoreLabel> {
+public class NERClassifierCombiner extends ClassifierCombiner<CoreLabel>  {
+
+  /** A logger for this class */
+  private static final Redwood.RedwoodChannels log = Redwood.channels(NERClassifierCombiner.class);
 
   private final boolean applyNumericClassifiers;
   public static final boolean APPLY_NUMERIC_CLASSIFIERS_DEFAULT = true;
@@ -78,6 +82,7 @@ public class NERClassifierCombiner extends ClassifierCombiner<CoreLabel> {
                                String... loadPaths)
     throws IOException
   {
+    // NOTE: nscProps may contains sutime props which will not be recognized by the SeqClassifierFlags
     super(nscProps, ClassifierCombiner.extractCombinationModeSafe(nscProps), loadPaths);
     this.applyNumericClassifiers = applyNumericClassifiers;
     this.useSUTime = useSUTime;
@@ -168,7 +173,7 @@ public class NERClassifierCombiner extends ClassifierCombiner<CoreLabel> {
       models  = modelNames.split(",");
     } else {
       // Allow for no real NER model - can just use numeric classifiers or SUTime
-      System.err.println("WARNING: no NER models specified");
+      log.info("WARNING: no NER models specified");
       models = StringUtils.EMPTY_STRING_ARRAY;
     }
     NERClassifierCombiner nerCombiner;
@@ -184,6 +189,11 @@ public class NERClassifierCombiner extends ClassifierCombiner<CoreLabel> {
       Properties combinerProperties;
       if (passDownProperties != null) {
         combinerProperties = PropertiesUtils.extractSelectedProperties(properties, passDownProperties);
+        if (useSUTime) {
+          // Make sure SUTime parameters are included
+          Properties sutimeProps = PropertiesUtils.extractPrefixedProperties(properties, NumberSequenceClassifier.SUTIME_PROPERTY + ".", true);
+          PropertiesUtils.overWriteProperties(combinerProperties, sutimeProps);
+        }
       } else {
         // if passDownProperties is null, just pass everything through
         combinerProperties = properties;
@@ -232,8 +242,8 @@ public class NERClassifierCombiner extends ClassifierCombiner<CoreLabel> {
       } catch (RuntimeInterruptedException e) {
         throw e;
       } catch (Exception e) {
-        System.err.println("Ignored an exception in NumberSequenceClassifier: (result is that some numbers were not classified)");
-        System.err.println("Tokens: " + StringUtils.joinWords(tokens, " "));
+        log.info("Ignored an exception in NumberSequenceClassifier: (result is that some numbers were not classified)");
+        log.info("Tokens: " + StringUtils.joinWords(tokens, " "));
         e.printStackTrace(System.err);
       }
 
@@ -245,12 +255,12 @@ public class NERClassifierCombiner extends ClassifierCombiner<CoreLabel> {
         // note: this uses and sets NamedEntityTagAnnotation!
         QuantifiableEntityNormalizer.addNormalizedQuantitiesToEntities(output, false, useSUTime);
       } catch (Exception e) {
-        System.err.println("Ignored an exception in QuantifiableEntityNormalizer: (result is that entities were not normalized)");
-        System.err.println("Tokens: " + StringUtils.joinWords(tokens, " "));
+        log.info("Ignored an exception in QuantifiableEntityNormalizer: (result is that entities were not normalized)");
+        log.info("Tokens: " + StringUtils.joinWords(tokens, " "));
         e.printStackTrace(System.err);
       } catch(AssertionError e) {
-        System.err.println("Ignored an assertion in QuantifiableEntityNormalizer: (result is that entities were not normalized)");
-        System.err.println("Tokens: " + StringUtils.joinWords(tokens, " "));
+        log.info("Ignored an assertion in QuantifiableEntityNormalizer: (result is that entities were not normalized)");
+        log.info("Tokens: " + StringUtils.joinWords(tokens, " "));
         e.printStackTrace(System.err);
       }
     } else {
@@ -272,7 +282,7 @@ public class NERClassifierCombiner extends ClassifierCombiner<CoreLabel> {
       CoreLabel origWord = words.get(i);
       CoreLabel newWord = newWords.get(i);
 
-      // System.err.println(newWord.word() + " => " + newWord.get(CoreAnnotations.AnswerAnnotation.class) + " " + origWord.ner());
+      // log.info(newWord.word() + " => " + newWord.get(CoreAnnotations.AnswerAnnotation.class) + " " + origWord.ner());
 
       String before = origWord.get(CoreAnnotations.AnswerAnnotation.class);
       String newGuess = newWord.get(CoreAnnotations.AnswerAnnotation.class);
@@ -321,17 +331,17 @@ public class NERClassifierCombiner extends ClassifierCombiner<CoreLabel> {
 
   // method for displaying info about an NERClassifierCombiner
   public static void showNCCInfo(NERClassifierCombiner ncc) {
-    System.err.println("");
-    System.err.println("info for this NERClassifierCombiner: ");
+    log.info("");
+    log.info("info for this NERClassifierCombiner: ");
     ClassifierCombiner.showCCInfo(ncc);
-    System.err.println("useSUTime: "+ncc.useSUTime);
-    System.err.println("applyNumericClassifier: "+ncc.applyNumericClassifiers);
-    System.err.println("");
+    log.info("useSUTime: "+ncc.useSUTime);
+    log.info("applyNumericClassifier: "+ncc.applyNumericClassifiers);
+    log.info("");
   }
 
   /** the main method **/
   public static void main(String[] args) throws Exception {
-    StringUtils.printErrInvocationString("NERClassifierCombiner", args);
+    StringUtils.logInvocationString(log, args);
     Properties props = StringUtils.argsToProperties(args);
     SeqClassifierFlags flags = new SeqClassifierFlags(props);
 
@@ -362,7 +372,7 @@ public class NERClassifierCombiner extends ClassifierCombiner<CoreLabel> {
     // run on multiple textFiles , based off CRFClassifier code
     String textFiles = props.getProperty("textFiles");
     if (textFiles != null) {
-      List<File> files = new ArrayList<File>();
+      List<File> files = new ArrayList<>();
       for (String filename : textFiles.split(",")) {
         files.add(new File(filename));
       }
@@ -379,13 +389,13 @@ public class NERClassifierCombiner extends ClassifierCombiner<CoreLabel> {
       if (crfToExamine == null) {
         // in this case there is no crfToExamine
         if (testFile != null) {
-          ncc.classifyAndWriteAnswers(testFile,readerAndWriter,true);
+          ncc.classifyAndWriteAnswers(testFile, readerAndWriter, true);
         } else {
           List<File> files = Arrays.asList(testFiles.split(",")).stream().map(File::new).collect(Collectors.toList());
           ncc.classifyFilesAndWriteAnswers(files, ncc.defaultReaderAndWriter(), true);
         }
       } else {
-        ClassifierCombiner.examineCRF(ncc,crfToExamine,flags,testFile,testFiles,readerAndWriter);
+        ClassifierCombiner.examineCRF(ncc, crfToExamine, flags, testFile, testFiles, readerAndWriter);
       }
     }
 

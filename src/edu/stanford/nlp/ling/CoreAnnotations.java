@@ -1,5 +1,6 @@
 package edu.stanford.nlp.ling;
 
+import edu.stanford.nlp.ie.util.RelationTriple;
 import edu.stanford.nlp.util.*;
 
 import java.util.Calendar;
@@ -447,13 +448,22 @@ public class CoreAnnotations {
       return String.class;
     }
   }
+
+  /**
+   * CoNLL-U dep parsing - span of multiword tokens
+   */
+  public static class CoNLLUTokenSpanAnnotation implements CoreAnnotation<IntPair> {
+    public Class<IntPair> getType() {
+      return ErasureUtils.<Class<IntPair>> uncheckedCast(Pair.class);
+    }
+  }
   
   /**
    * CoNLL-U dep parsing - List of secondary dependencies
    */
-  public static class CoNLLUSecondaryDepsAnnotation implements CoreAnnotation<String> {
-    public Class<String> getType() {
-      return String.class;
+  public static class CoNLLUSecondaryDepsAnnotation implements CoreAnnotation<HashMap<Integer,String>> {
+    public Class<HashMap<Integer,String>> getType() {
+      return ErasureUtils.<Class<HashMap<Integer,String>>> uncheckedCast(Pair.class);
     }
   }
   
@@ -1632,6 +1642,15 @@ public class CoreAnnotations {
     }
   }
 
+  /**
+   * Stores an exception associated with processing this document
+   */
+  public static class ExceptionAnnotation implements CoreAnnotation<Throwable> {
+    public Class<Throwable> getType() {
+      return ErasureUtils.uncheckedCast(Throwable.class);
+    }
+  }
+
 
   /**
    * The CoreMap key identifying the annotation's antecedent.
@@ -1665,5 +1684,27 @@ public class CoreAnnotations {
 
   public static class LabelIDAnnotation implements CoreAnnotation<Integer>{
     public Class<Integer> getType() { return Integer.class; }
+  }
+
+  /**
+   * An annotation for a sentence tagged with its KBP relation.
+   * Attaches to a sentence.
+   *
+   * @see edu.stanford.nlp.pipeline.KBPAnnotator
+   */
+  public static class KBPTriplesAnnotation implements CoreAnnotation<List<RelationTriple>>{
+    public Class<List<RelationTriple>> getType() { return ErasureUtils.uncheckedCast(List.class); }
+  }
+
+  /**
+   * An annotation for the Wikipedia page (i.e., canonical name) associated with
+   * this token.
+   * This is the recommended annotation to use for entity linking that links to Wikipedia.
+   * Attaches to a token, as well as to a mention (see (@link MentionsAnnotation}).
+   *
+   * @see edu.stanford.nlp.pipeline.WikidictAnnotator
+   */
+  public static class WikipediaEntityAnnotation implements CoreAnnotation<String>{
+    public Class<String> getType() { return ErasureUtils.uncheckedCast(String.class); }
   }
 }

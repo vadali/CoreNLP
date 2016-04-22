@@ -1,9 +1,11 @@
-package edu.stanford.nlp.ling;
+package edu.stanford.nlp.ling; 
+import edu.stanford.nlp.util.logging.Redwood;
 
 import java.util.Arrays;
 import java.util.Comparator;
 import java.util.Map;
 import java.util.TreeMap;
+import java.util.function.Consumer;
 
 import edu.stanford.nlp.ling.AnnotationLookup.KeyLookup;
 import edu.stanford.nlp.util.ArrayCoreMap;
@@ -29,7 +31,10 @@ import edu.stanford.nlp.util.Generics;
  * @author dramage
  * @author rafferty
  */
-public class CoreLabel extends ArrayCoreMap implements AbstractCoreLabel, HasCategory, HasContext {
+public class CoreLabel extends ArrayCoreMap implements AbstractCoreLabel, HasCategory, HasContext  {
+
+  /** A logger for this class */
+  private static Redwood.RedwoodChannels log = Redwood.channels(CoreLabel.class);
 
   private static final long serialVersionUID = 2L;
 
@@ -77,9 +82,12 @@ public class CoreLabel extends ArrayCoreMap implements AbstractCoreLabel, HasCat
   @SuppressWarnings({"unchecked"})
   public CoreLabel(CoreMap label) {
     super(label.size());
+    Consumer<Class<? extends Key<?>>> listener = ArrayCoreMap.listener;  // don't listen to the clone operation
+    ArrayCoreMap.listener = null;
     for (Class key : label.keySet()) {
       set(key, label.get(key));
     }
+    ArrayCoreMap.listener = listener;
   }
 
   /**
@@ -182,7 +190,7 @@ public class CoreLabel extends ArrayCoreMap implements AbstractCoreLabel, HasCat
         //}
         // unknown key; ignore
         //if (VERBOSE) {
-        //  System.err.println("CORE: CoreLabel.fromAbstractMapLabel: " +
+        //  log.info("CORE: CoreLabel.fromAbstractMapLabel: " +
         //      "Unknown key "+key);
         //}
       } else {
@@ -284,13 +292,17 @@ public class CoreLabel extends ArrayCoreMap implements AbstractCoreLabel, HasCat
    */
   @Override
   public <KEY extends Key<String>> String getString(Class<KEY> key) {
+    return this.getString(key, "");
+  }
+
+  @Override
+  public <KEY extends Key<String>> String getString(Class<KEY> key, String def) {
     String value = get(key);
     if (value == null) {
-      return "";
+      return def;
     }
     return value;
   }
-
 
   /**
    * {@inheritDoc}
@@ -550,7 +562,7 @@ public class CoreLabel extends ArrayCoreMap implements AbstractCoreLabel, HasCat
   public static final String TAG_SEPARATOR = "/";
 
   public enum OutputFormat {
-    VALUE_INDEX, VALUE, VALUE_TAG, VALUE_TAG_INDEX, MAP, VALUE_MAP, VALUE_INDEX_MAP, WORD, WORD_INDEX, VALUE_TAG_NER, ALL
+    VALUE_INDEX, VALUE, VALUE_TAG, VALUE_TAG_INDEX, MAP, VALUE_MAP, VALUE_INDEX_MAP, WORD, WORD_INDEX, VALUE_TAG_NER, LEMMA_INDEX, ALL
   }
 
   public static final OutputFormat DEFAULT_FORMAT = OutputFormat.VALUE_INDEX;
@@ -680,6 +692,13 @@ public class CoreLabel extends ArrayCoreMap implements AbstractCoreLabel, HasCat
       }
       break;
     }
+    case LEMMA_INDEX:
+      buf.append(lemma());
+      Integer index = this.get(CoreAnnotations.IndexAnnotation.class);
+      if (index != null) {
+        buf.append('-').append((index).intValue());
+      }
+      break;
     case ALL:{
       for(Class en: this.keySet()){
         buf.append(";").append(en).append(":").append(this.get(en));

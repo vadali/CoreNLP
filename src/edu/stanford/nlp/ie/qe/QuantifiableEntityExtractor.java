@@ -9,6 +9,7 @@ import edu.stanford.nlp.ling.tokensregex.MatchedExpression;
 import edu.stanford.nlp.ling.tokensregex.TokenSequencePattern;
 import edu.stanford.nlp.util.CoreMap;
 import edu.stanford.nlp.util.StringUtils;
+import edu.stanford.nlp.util.logging.Redwood;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -26,7 +27,7 @@ import java.util.regex.Pattern;
  * @author Angel Chang
  */
 public class QuantifiableEntityExtractor {
-  protected static final Logger logger = Logger.getLogger(QuantifiableEntityExtractor.class.getName());
+
   Env env;
   Options options;
   CoreMapExpressionExtractor extractor;
@@ -54,13 +55,6 @@ public class QuantifiableEntityExtractor {
     this.options = options;
     initEnv();
     extractor = createExtractor();
-
-    if (options.verbose) {
-      logger.setLevel(Level.FINE);
-    } else {
-      logger.setLevel(Level.SEVERE);
-    }
-    extractor.setLogger(logger);
   }
 
   public CoreMapExpressionExtractor createExtractor() {
@@ -96,7 +90,7 @@ public class QuantifiableEntityExtractor {
     List<UnitPrefix> prefixes = UnitPrefix.loadPrefixes(infile);
     PrintWriter pw = IOUtils.getPrintWriter(outfile);
     pw.println("SI_PREFIX_MAP = {");
-    List<String> items = new ArrayList<String>();
+    List<String> items = new ArrayList<>();
     for (UnitPrefix prefix:prefixes) {
       if ("SI".equals(prefix.system)) {
         items.add("\"" + prefix.name + "\": " + prefix.getName().toUpperCase());
@@ -125,7 +119,7 @@ public class QuantifiableEntityExtractor {
 
     List<Unit> units = Units.loadUnits(unitsFiles);
     pw.println("SI_UNIT_MAP = {");
-    List<String> items = new ArrayList<String>();
+    List<String> items = new ArrayList<>();
     for (Unit unit:units) {
       if ("SI".equals(unit.prefixSystem)) {
         items.add("\"" + unit.name + "\": " + (unit.getType() + "_" + unit.getName()).toUpperCase());

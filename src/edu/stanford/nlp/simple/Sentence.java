@@ -1,5 +1,6 @@
 package edu.stanford.nlp.simple;
 
+import edu.stanford.nlp.hcoref.data.CorefChain;
 import edu.stanford.nlp.ie.util.RelationTriple;
 import edu.stanford.nlp.ling.CoreAnnotations;
 import edu.stanford.nlp.ling.CoreLabel;
@@ -22,7 +23,6 @@ import java.io.OutputStream;
 import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -35,10 +35,10 @@ import static edu.stanford.nlp.simple.Document.EMPTY_PROPS;
  *
  * @author Gabor Angeli
  */
-@SuppressWarnings("UnusedDeclaration")
+@SuppressWarnings({"UnusedDeclaration", "WeakerAccess"})
 public class Sentence {
   /** A properties object for creating a document from a single sentence. Used in the constructor {@link Sentence#Sentence(String)} */
-  private static Properties SINGLE_SENTENCE_DOCUMENT = new Properties() {{
+  static Properties SINGLE_SENTENCE_DOCUMENT = new Properties() {{
     setProperty("ssplit.isOneSentence", "true");
     setProperty("tokenize.class", "PTBTokenizer");
     setProperty("tokenize.language", "en");
@@ -66,9 +66,11 @@ public class Sentence {
   private final List<CoreNLPProtos.Token.Builder> tokensBuilders;
   /** The document this sentence is derived from */
   public final Document document;
+  /** The default properties to use for annotators. */
+  private Properties defaultProps = EMPTY_PROPS;
 
   /**
-   * Create a new sentence, using the specified properties ONLY FOR TOKENIZATION.
+   * Create a new sentence, using the specified properties as the default properties.
    * @param text The text of the sentence.
    * @param props The properties to use for tokenizing the sentence.
    */
@@ -88,6 +90,12 @@ public class Sentence {
     // Asserts
     assert (this.document.sentence(0).impl == this.impl);
     assert (this.document.sentence(0).tokensBuilders == this.tokensBuilders);
+    // Set the default properties
+    if (props == SINGLE_SENTENCE_TOKENIZED_DOCUMENT) {
+      this.defaultProps = SINGLE_SENTENCE_DOCUMENT;  // no longer care about tokenization
+    } else {
+      this.defaultProps = props;
+    }
   }
 
   /**
@@ -114,6 +122,7 @@ public class Sentence {
       this.tokensBuilders.get(i).setWord(this.tokensBuilders.get(i).getWord().replace('ߝ', ' '));
       this.tokensBuilders.get(i).setValue(this.tokensBuilders.get(i).getValue().replace('ߝ', ' '));
     }
+    // Set the default properties
   }
 
   /**
@@ -150,9 +159,10 @@ public class Sentence {
    * @param doc The document to link this sentence to.
    * @param proto The sentence implementation to use for this sentence.
    */
-  protected Sentence(Document doc, CoreNLPProtos.Sentence.Builder proto) {
+  protected Sentence(Document doc, CoreNLPProtos.Sentence.Builder proto, Properties defaultProps) {
     this.document = doc;
     this.impl = proto;
+    this.defaultProps = defaultProps;
     // Set tokens
     // This is the _only_ place we are allowed to construct tokens builders
     tokensBuilders = new ArrayList<>(this.impl.getTokenCount());
@@ -161,10 +171,25 @@ public class Sentence {
     }
   }
 
+  /**
+   * Also sets the the text of the sentence. Used by {@link Document} internally
+   *
+   * @param doc The document to link this sentence to.
+   * @param proto The sentence implementation to use for this sentence.
+   * @param text The text for the sentence
+   * @param defaultProps The default properties to use when annotating this sentence.
+   */
+  Sentence(Document doc, CoreNLPProtos.Sentence.Builder proto, String text, Properties defaultProps) {
+    this(doc, proto, defaultProps);
+    this.impl.setText(text);
+  }
+
   /** Helper for creating a sentence from a document and a CoreMap representation */
   protected Sentence(Document doc, CoreMap sentence) {
-    this(doc, doc.serializer.toProtoBuilder(sentence));
-    this.impl.setText(sentence.get(CoreAnnotations.TextAnnotation.class));
+    this.document = doc;
+    assert doc.sentences().size() > 0;
+    this.impl = doc.sentence(0).impl;
+    this.tokensBuilders = doc.sentence(0).tokensBuilders;
   }
 
   /**
@@ -177,6 +202,9 @@ public class Sentence {
   public Sentence(CoreMap sentence) {
     this(new Document(new Annotation(sentence.get(CoreAnnotations.TextAnnotation.class)) {{
       set(CoreAnnotations.SentencesAnnotation.class, Collections.singletonList(sentence));
+      if(sentence.containsKey(CoreAnnotations.DocIDAnnotation.class)) {
+        set(CoreAnnotations.DocIDAnnotation.class, sentence.get(CoreAnnotations.DocIDAnnotation.class));
+      }
     }}), sentence);
   }
 
@@ -205,6 +233,31 @@ public class Sentence {
       set(SemanticGraphCoreAnnotations.CollapsedCCProcessedDependenciesAnnotation.class, sentence.parseTree);
     }});
   }
+
+
+  /**
+   * Make this sentence caseless. That is, from now on, run the caseless models
+   * on the sentence by default rather than the standard CoreNLP models.
+   *
+   * @return This same sentence, but with the default properties swapped out.
+   */
+  public Sentence caseless() {
+    this.defaultProps = Document.CASELESS_PROPS;
+    return this;
+  }
+
+  /**
+   * Make this sentence case sensitive.
+   * A sentence is case sensitive by default; this only has an effect if you have previously
+   * called {@link Sentence#caseless()}.
+   *
+   * @return This same sentence, but with the default properties swapped out.
+   */
+  public Sentence cased() {
+    this.defaultProps = Document.EMPTY_PROPS;
+    return this;
+  }
+
 
   /**
    * Serialize the given sentence (but not the associated document!) into a Protocol Buffer.
@@ -356,7 +409,7 @@ public class Sentence {
 
   /** @see Sentence#posTags(java.util.Properties) */
   public List<String> posTags() {
-    return posTags(EMPTY_PROPS);
+    return posTags(this.defaultProps);
   }
 
   /** @see Sentence#posTags(java.util.Properties) */
@@ -378,7 +431,7 @@ public class Sentence {
 
   /** @see Sentence#lemmas(java.util.Properties) */
   public List<String> lemmas() {
-    return lemmas(EMPTY_PROPS);
+    return lemmas(this.defaultProps);
   }
 
   /** @see Sentence#lemmas(java.util.Properties) */
@@ -391,16 +444,16 @@ public class Sentence {
    * @param props The properties to use for the {@link edu.stanford.nlp.pipeline.NERCombinerAnnotator}.
    * @return A list of named entity tags, one for each token in the sentence.
    */
-  public List<String> ners(Properties props) {
+  public List<String> nerTags(Properties props) {
     document.runNER(props);
     synchronized (impl) {
       return lazyList(tokensBuilders, CoreNLPProtos.Token.Builder::getNer);
     }
   }
 
-  /** @see Sentence#ners(java.util.Properties) */
-  public List<String> ners() {
-    return ners(EMPTY_PROPS);
+  /** @see Sentence#nerTags(java.util.Properties) */
+  public List<String> nerTags() {
+    return nerTags(this.defaultProps);
   }
 
   /**
@@ -414,17 +467,17 @@ public class Sentence {
    */
   public void regexner(String mappingFile, boolean ignorecase) {
     Properties props = new Properties();
-    for (Object prop : EMPTY_PROPS.keySet()) {
-      props.setProperty(prop.toString(), EMPTY_PROPS.getProperty(prop.toString()));
+    for (Object prop : this.defaultProps.keySet()) {
+      props.setProperty(prop.toString(), this.defaultProps.getProperty(prop.toString()));
     }
     props.setProperty(Annotator.STANFORD_REGEXNER + ".mapping", mappingFile);
     props.setProperty(Annotator.STANFORD_REGEXNER + ".ignorecase", Boolean.toString(ignorecase));
     this.document.runRegexner(props);
   }
 
-  /** @see Sentence#ners(java.util.Properties) */
-  public String ner(int index) {
-    return ners().get(index);
+  /** @see Sentence#nerTags(java.util.Properties) */
+  public String nerTag(int index) {
+    return nerTags().get(index);
   }
 
   /**
@@ -437,7 +490,7 @@ public class Sentence {
     StringBuilder lastMention = new StringBuilder();
     String lastTag = "O";
     for (int i = 0; i < length(); ++i) {
-      String ner = ner(i);
+      String ner = nerTag(i);
       if (ner.equals(nerTag) && !lastTag.equals(nerTag)) {
         // case: beginning of span
         lastMention.append(word(i)).append(' ');
@@ -468,7 +521,7 @@ public class Sentence {
     StringBuilder lastMention = new StringBuilder();
     String lastTag = "O";
     for (int i = 0; i < length(); ++i) {
-      String ner = ner(i);
+      String ner = nerTag(i);
       if (!ner.equals("O") && !lastTag.equals(ner)) {
         // case: beginning of span
         if (lastMention.length() > 0) {
@@ -509,7 +562,7 @@ public class Sentence {
 
   /** @see Sentence#parse(java.util.Properties) */
   public Tree parse() {
-    return parse(EMPTY_PROPS);
+    return parse(this.defaultProps);
   }
 
   /** An internal helper to get the dependency tree of the given type. */
@@ -558,12 +611,12 @@ public class Sentence {
 
   /** @see Sentence#governor(java.util.Properties, int, SemanticGraphFactory.Mode) */
   public Optional<Integer> governor(int index, SemanticGraphFactory.Mode mode) {
-    return governor(EMPTY_PROPS, index, mode);
+    return governor(this.defaultProps, index, mode);
   }
 
   /** @see Sentence#governor(java.util.Properties, int) */
   public Optional<Integer> governor(int index) {
-    return governor(EMPTY_PROPS, index);
+    return governor(this.defaultProps, index);
   }
 
   /**
@@ -596,12 +649,12 @@ public class Sentence {
 
   /** @see Sentence#governors(java.util.Properties, SemanticGraphFactory.Mode) */
   public List<Optional<Integer>> governors(SemanticGraphFactory.Mode mode) {
-    return governors(EMPTY_PROPS, mode);
+    return governors(this.defaultProps, mode);
   }
 
   /** @see Sentence#governors(java.util.Properties, SemanticGraphFactory.Mode) */
   public List<Optional<Integer>> governors() {
-    return governors(EMPTY_PROPS, SemanticGraphFactory.Mode.COLLAPSED_TREE);
+    return governors(this.defaultProps, SemanticGraphFactory.Mode.COLLAPSED_TREE);
   }
 
   /**
@@ -633,12 +686,12 @@ public class Sentence {
 
   /** @see Sentence#incomingDependencyLabel(java.util.Properties, int, SemanticGraphFactory.Mode) */
   public Optional<String> incomingDependencyLabel(int index, SemanticGraphFactory.Mode mode) {
-    return incomingDependencyLabel(EMPTY_PROPS, index, mode);
+    return incomingDependencyLabel(this.defaultProps, index, mode);
   }
 
   /** @see Sentence#incomingDependencyLabel(java.util.Properties, int) */
   public Optional<String> incomingDependencyLabel(int index) {
-    return incomingDependencyLabel(EMPTY_PROPS, index);
+    return incomingDependencyLabel(this.defaultProps, index);
   }
 
   /** @see Sentence#incomingDependencyLabel(java.util.Properties, int) */
@@ -657,7 +710,7 @@ public class Sentence {
 
   /** @see Sentence#incomingDependencyLabels(java.util.Properties, SemanticGraphFactory.Mode) */
   public List<Optional<String>> incomingDependencyLabels(SemanticGraphFactory.Mode mode) {
-    return incomingDependencyLabels(EMPTY_PROPS, mode);
+    return incomingDependencyLabels(this.defaultProps, mode);
   }
 
   /** @see Sentence#incomingDependencyLabels(java.util.Properties, SemanticGraphFactory.Mode) */
@@ -667,7 +720,7 @@ public class Sentence {
 
   /** @see Sentence#incomingDependencyLabels(java.util.Properties, SemanticGraphFactory.Mode) */
   public List<Optional<String>> incomingDependencyLabels() {
-    return incomingDependencyLabels(EMPTY_PROPS, SemanticGraphFactory.Mode.COLLAPSED_TREE);
+    return incomingDependencyLabels(this.defaultProps, SemanticGraphFactory.Mode.COLLAPSED_TREE);
   }
 
 
@@ -693,12 +746,12 @@ public class Sentence {
 
   /** @see Sentence#dependencyGraph(Properties, SemanticGraphFactory.Mode) */
   public SemanticGraph dependencyGraph() {
-    return dependencyGraph(EMPTY_PROPS, SemanticGraphFactory.Mode.COLLAPSED_TREE);
+    return dependencyGraph(this.defaultProps, SemanticGraphFactory.Mode.COLLAPSED_TREE);
   }
 
   /** @see Sentence#dependencyGraph(Properties, SemanticGraphFactory.Mode) */
   public SemanticGraph dependencyGraph(SemanticGraphFactory.Mode mode) {
-    return dependencyGraph(EMPTY_PROPS, mode);
+    return dependencyGraph(this.defaultProps, mode);
   }
 
   /** The length of the sentence, in tokens */
@@ -724,7 +777,7 @@ public class Sentence {
 
   /** @see Sentence#operators(Properties) */
   public List<Optional<OperatorSpec>> operators() {
-    return operators(EMPTY_PROPS);
+    return operators(this.defaultProps);
   }
 
   /** @see Sentence#operators(Properties) */
@@ -735,7 +788,7 @@ public class Sentence {
 
   /** @see Sentence#operators(Properties) */
   public Optional<OperatorSpec> operatorAt(int i) {
-    return operators(EMPTY_PROPS).get(i);
+    return operators(this.defaultProps).get(i);
   }
 
   /**
@@ -754,7 +807,7 @@ public class Sentence {
 
   /** @see Sentence#operatorsNonempty(Properties) */
   public List<OperatorSpec> operatorsNonempty() {
-    return operatorsNonempty(EMPTY_PROPS);
+    return operatorsNonempty(this.defaultProps);
   }
 
   /**
@@ -771,7 +824,7 @@ public class Sentence {
 
   /** @see Sentence#natlogPolarities(Properties) */
   public List<Polarity> natlogPolarities() {
-    return natlogPolarities(EMPTY_PROPS);
+    return natlogPolarities(this.defaultProps);
   }
 
   /**
@@ -789,7 +842,7 @@ public class Sentence {
 
   /** @see Sentence#natlogPolarity(Properties, int) */
   public Polarity natlogPolarity(int index) {
-    return natlogPolarity(EMPTY_PROPS, index);
+    return natlogPolarity(this.defaultProps, index);
   }
 
 
@@ -811,7 +864,7 @@ public class Sentence {
 
   /** @see Sentence@openieTriples(Properties) */
   public Collection<RelationTriple> openieTriples() {
-    return openieTriples(EMPTY_PROPS);
+    return openieTriples(this.defaultProps);
   }
 
   /**
@@ -823,11 +876,82 @@ public class Sentence {
    * @see Sentence@openieTriples(Properties)
    */
   public Collection<Quadruple<String, String, String, Double>> openie() {
+    document.runOpenie(this.defaultProps);
     return impl.getOpenieTripleList().stream()
         .filter(proto -> proto.hasSubject() && proto.hasRelation() && proto.hasObject())
         .map(proto -> Quadruple.makeQuadruple(proto.getSubject(), proto.getRelation(), proto.getObject(),
             proto.hasConfidence() ? proto.getConfidence() : 1.0))
         .collect(Collectors.toList());
+  }
+
+
+  /**
+   * Get the KBP triples associated with this sentence.
+   * Note that this function may be slower than you would expect, as it has to
+   * convert the underlying Protobuf representation back into {@link CoreLabel}s.
+   *
+   * @param props The properties to use for the KBP annotator.
+   * @return A collection of {@link RelationTriple} objects representing the KBP triples in the sentence.
+   */
+  public Collection<RelationTriple> kbpTriples(Properties props) {
+    document.runKBP(props);
+    synchronized (impl) {
+      List<CoreLabel> tokens = asCoreLabels();
+      return impl.getKbpTripleList().stream().map(x -> ProtobufAnnotationSerializer.fromProto(x, tokens, document.docid().orElse(null))).collect(Collectors.toList());
+    }
+  }
+
+  /** @see Sentence@kbpTriples(Properties) */
+  public Collection<RelationTriple> kbpTriples() {
+    return kbpTriples(this.defaultProps);
+  }
+
+  /**
+   * Get a list of KBP triples as flat (subject, relation, object, confidence) quadruples.
+   * This is substantially faster than returning {@link RelationTriple} objects, as it doesn't
+   * require converting the underlying representation into {@link CoreLabel}s; but, it also contains
+   * significantly less information about the sentence.
+   *
+   * @see Sentence@kbpTriples(Properties)
+   */
+  public Collection<Quadruple<String, String, String, Double>> kbp() {
+    document.runKBP(this.defaultProps);
+    return impl.getKbpTripleList().stream()
+        .filter(proto -> proto.hasSubject() && proto.hasRelation() && proto.hasObject())
+        .map(proto -> Quadruple.makeQuadruple(proto.getSubject(), proto.getRelation(), proto.getObject(),
+            proto.hasConfidence() ? proto.getConfidence() : 1.0))
+        .collect(Collectors.toList());
+  }
+
+  /**
+   * Get the coreference chain for just this sentence.
+   * Note that this method is actually fairly computationally expensive to call, as it constructs and prunes
+   * the coreference data structure for the entire document.
+   * @return A coreference chain, but only for this sentence
+   */
+  public Map<Integer, CorefChain> coref() {
+    // Get the raw coref structure
+    Map<Integer, CorefChain> allCorefs = document.coref();
+    // Delete coreference chains not in this sentence
+    Set<Integer> toDeleteEntirely = new HashSet<>();
+    for (Integer clusterID : allCorefs.keySet()) {
+      CorefChain chain = allCorefs.get(clusterID);
+      ArrayList<CorefChain.CorefMention> mentions = new ArrayList<>(chain.getMentionsInTextualOrder());
+      for (CorefChain.CorefMention m : mentions) {
+        if (m.sentNum != this.sentenceIndex() + 1) {
+          chain.deleteMention(m);
+        }
+      }
+      if (chain.getMentionsInTextualOrder().isEmpty()) {
+        toDeleteEntirely.add(clusterID);
+      }
+    }
+    // Clean up dangling empty chains
+    for (Integer danglingChain : toDeleteEntirely) {
+      allCorefs.remove(danglingChain);
+    }
+    // Return
+    return allCorefs;
   }
 
 
@@ -848,11 +972,11 @@ public class Sentence {
    */
   @SuppressWarnings("TypeParameterExplicitlyExtendsObject")
   @SafeVarargs
-  public final CoreMap asCoreMap(Supplier<? extends Object>... functions) {
-    for (Supplier<?> function : functions) {
-      function.get();
+  public final CoreMap asCoreMap(Function<Sentence,Object>... functions) {
+    for (Function<Sentence, Object> function : functions) {
+      function.apply(this);
     }
-    return this.document.asAnnotation().get(CoreAnnotations.SentencesAnnotation.class).get(this.sentenceIndex());
+    return this.document.asAnnotation(true).get(CoreAnnotations.SentencesAnnotation.class).get(this.sentenceIndex());
   }
 
   /**
@@ -868,9 +992,9 @@ public class Sentence {
    */
   @SuppressWarnings("TypeParameterExplicitlyExtendsObject")
   @SafeVarargs
-  public final List<CoreLabel> asCoreLabels(Supplier<? extends Object>... functions) {
-    for (Supplier<?> function : functions) {
-      function.get();
+  public final List<CoreLabel> asCoreLabels(Function<Sentence,Object>... functions) {
+    for (Function<Sentence, Object> function : functions) {
+      function.apply(this);
     }
     return asCoreMap().get(CoreAnnotations.TokensAnnotation.class);
   }
@@ -950,9 +1074,20 @@ public class Sentence {
    *
    * @param triples The stream of relation triples to add to the sentence.
    */
-  protected void updateTriples(Stream<CoreNLPProtos.OpenIETriple> triples) {
+  protected void updateOpenIE(Stream<CoreNLPProtos.RelationTriple> triples) {
     synchronized (this.impl) {
       triples.forEach(this.impl::addOpenieTriple);
+    }
+  }
+
+  /**
+   * Update the Open IE relation triples for this sentence.
+   *
+   * @param triples The stream of relation triples to add to the sentence.
+   */
+  protected void updateKBP(Stream<CoreNLPProtos.RelationTriple> triples) {
+    synchronized (this.impl) {
+      triples.forEach(this.impl::addKbpTriple);
     }
   }
 
@@ -1010,5 +1145,16 @@ public class Sentence {
         return tokens.size();
       }
     };
+  }
+
+  /** Returns the sentence id of the sentence, if one was found */
+  public Optional<String> sentenceid() {
+    synchronized (impl) {
+      if (impl.hasSentenceID()) {
+        return Optional.of(impl.getSentenceID());
+      } else {
+        return Optional.empty();
+      }
+    }
   }
 }

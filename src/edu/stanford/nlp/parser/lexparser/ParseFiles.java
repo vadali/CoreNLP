@@ -15,8 +15,9 @@ import java.util.function.Function;
 import edu.stanford.nlp.io.IOUtils;
 import edu.stanford.nlp.io.RuntimeIOException;
 import edu.stanford.nlp.ling.HasWord;
-import edu.stanford.nlp.ling.Sentence;
+import edu.stanford.nlp.ling.SentenceUtils;
 import edu.stanford.nlp.parser.common.ParserQuery;
+import edu.stanford.nlp.parser.common.ParserUtils;
 import edu.stanford.nlp.parser.common.ParsingThreadsafeProcessor;
 import edu.stanford.nlp.parser.metrics.AbstractEval;
 import edu.stanford.nlp.process.TokenizerFactory;
@@ -182,14 +183,14 @@ public class ParseFiles {
       int num = 0;
       int numProcessed = 0;
       if (op.testOptions.testingThreads != 1) {
-        MulticoreWrapper<List<? extends HasWord>, ParserQuery> wrapper = new MulticoreWrapper<List<? extends HasWord>, ParserQuery>(op.testOptions.testingThreads, new ParsingThreadsafeProcessor(pqFactory, pwErr));
+        MulticoreWrapper<List<? extends HasWord>, ParserQuery> wrapper = new MulticoreWrapper<>(op.testOptions.testingThreads, new ParsingThreadsafeProcessor(pqFactory, pwErr));
 
         for (List<HasWord> sentence : documentPreprocessor) {
           num++;
           numSents++;
           int len = sentence.size();
           numWords += len;
-          pwErr.println("Parsing [sent. " + num + " len. " + len + "]: " + Sentence.listToString(sentence, true));
+          pwErr.println("Parsing [sent. " + num + " len. " + len + "]: " + SentenceUtils.listToString(sentence, true));
 
           wrapper.put(sentence);
           while (wrapper.peek()) {
@@ -210,7 +211,7 @@ public class ParseFiles {
           numSents++;
           int len = sentence.size();
           numWords += len;
-          pwErr.println("Parsing [sent. " + num + " len. " + len + "]: " + Sentence.listToString(sentence, true));
+          pwErr.println("Parsing [sent. " + num + " len. " + len + "]: " + SentenceUtils.listToString(sentence, true));
           pq.parseAndReport(sentence, pwErr);
           processResults(pq, numProcessed++, pwo);
         }

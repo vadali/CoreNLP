@@ -1,25 +1,26 @@
-package edu.stanford.nlp.naturalli;
+package edu.stanford.nlp.naturalli; 
+import edu.stanford.nlp.util.logging.Redwood;
 
 import edu.stanford.nlp.ie.machinereading.structure.Span;
+import edu.stanford.nlp.ling.CoreAnnotation;
 import edu.stanford.nlp.ling.CoreAnnotations;
 import edu.stanford.nlp.ling.CoreLabel;
 import edu.stanford.nlp.ling.IndexedWord;
+import edu.stanford.nlp.ling.tokensregex.TokenSequenceMatcher;
+import edu.stanford.nlp.ling.tokensregex.TokenSequencePattern;
 import edu.stanford.nlp.pipeline.Annotation;
-import edu.stanford.nlp.pipeline.Annotator;
 import edu.stanford.nlp.pipeline.SentenceAnnotator;
 import edu.stanford.nlp.semgraph.SemanticGraph;
 import edu.stanford.nlp.semgraph.SemanticGraphCoreAnnotations;
 import edu.stanford.nlp.semgraph.SemanticGraphEdge;
 import edu.stanford.nlp.semgraph.semgrex.SemgrexMatcher;
 import edu.stanford.nlp.semgraph.semgrex.SemgrexPattern;
-import edu.stanford.nlp.util.CoreMap;
-import edu.stanford.nlp.util.Pair;
-import edu.stanford.nlp.util.StringUtils;
-import edu.stanford.nlp.util.Triple;
+import edu.stanford.nlp.util.*;
 import edu.stanford.nlp.naturalli.NaturalLogicAnnotations.*;
 
 import java.util.*;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 /**
  * An annotator marking operators with their scope.
@@ -31,7 +32,10 @@ import java.util.function.Function;
  * @author Gabor Angeli
  */
 @SuppressWarnings("unchecked")
-public class NaturalLogicAnnotator extends SentenceAnnotator {
+public class NaturalLogicAnnotator extends SentenceAnnotator  {
+
+  /** A logger for this class */
+  private static Redwood.RedwoodChannels log = Redwood.channels(NaturalLogicAnnotator.class);
 
   /**
    * A regex for arcs that act as determiners.
@@ -123,6 +127,18 @@ public class NaturalLogicAnnotator extends SentenceAnnotator {
    */
   private static SemgrexPattern UNARY_PATTERN = SemgrexPattern.compile("{pos:/N.*/}=subject >"+DET+" "+QUANTIFIER);
 
+  /**
+   * A list of words that suggest their complement has downward polarity.
+   * For example, "doubt" ("I doubt that X")
+   */
+  private static List<String> DOUBT_WORDS = Arrays.asList("doubt", "skeptical");
+
+  /**
+   * A pattern for recognizing the words in {@link NaturalLogicAnnotator#DOUBT_WORDS}.
+   */
+  private static TokenSequencePattern DOUBT_PATTERN
+      = TokenSequencePattern.compile("(?$doubt [{ lemma:/" + StringUtils.join(DOUBT_WORDS, "|") + "/}]) (?$target [{lemma:/that|of/}] []+ )");
+
   /** A helper method for
    * {@link NaturalLogicAnnotator#getModifierSubtreeSpan(edu.stanford.nlp.semgraph.SemanticGraph, edu.stanford.nlp.ling.IndexedWord)} and
    * {@link NaturalLogicAnnotator#getSubtreeSpan(edu.stanford.nlp.semgraph.SemanticGraph, edu.stanford.nlp.ling.IndexedWord)}.
@@ -142,13 +158,10 @@ public class NaturalLogicAnnotator extends SentenceAnnotator {
       IndexedWord node = fringe.poll();
       min = Math.min(node.index(), min);
       max = Math.max(node.index(), max);
-      for (SemanticGraphEdge edge : tree.getOutEdgesSorted(node)) {
-        if (edge.getGovernor().equals(node) &&
-            !(edge.getGovernor().equals(edge.getDependent())) &&
-            !"punct".equals(edge.getRelation().getShortName())) {  // ignore punctuation
-          fringe.add(edge.getDependent());
-        }
-      }
+      // ignore punctuation
+      fringe.addAll(tree.getOutEdgesSorted(node).stream().filter(edge -> edge.getGovernor().equals(node) &&
+          !(edge.getGovernor().equals(edge.getDependent())) &&
+          !"punct".equals(edge.getRelation().getShortName())).map(SemanticGraphEdge::getDependent).collect(Collectors.toList()));
     }
     return Pair.makePair(min, max + 1);
   }
@@ -351,6 +364,9 @@ public class NaturalLogicAnnotator extends SentenceAnnotator {
         Optional<Triple<Operator,Integer,Integer>> quantifierInfo;
         if (namedEntityQuantifier) {
           // named entities have the "all" semantics by default.
+          if (!neQuantifiers) {
+            continue;
+          }
           quantifierInfo = Optional.of(Triple.makeTriple(Operator.IMPLICIT_NAMED_ENTITY, quantifier.index(), quantifier.index()));  // note: empty quantifier span given
         } else {
           // find the quantifier, and return some info about it.
@@ -405,11 +421,9 @@ public class NaturalLogicAnnotator extends SentenceAnnotator {
     // Ensure we didn't select overlapping quantifiers. For example, "a" and "a few" can often overlap.
     // In these cases, take the longer quantifier match.
     List<OperatorSpec> quantifiers = new ArrayList<>();
-    for (CoreLabel token : sentence.get(CoreAnnotations.TokensAnnotation.class)) {
-      if (token.has(OperatorAnnotation.class)) {
-        quantifiers.add(token.get(OperatorAnnotation.class));
-      }
-    }
+    sentence.get(CoreAnnotations.TokensAnnotation.class).stream()
+        .filter(token -> token.containsKey(OperatorAnnotation.class))
+        .forEach(token -> quantifiers.add(token.get(OperatorAnnotation.class)));
     quantifiers.sort( (x, y) -> y.quantifierLength() - x.quantifierLength());
     for (OperatorSpec quantifier : quantifiers) {
       for (int i = quantifier.quantifierBegin; i < quantifier.quantifierEnd; ++i) {
@@ -468,6 +482,22 @@ public class NaturalLogicAnnotator extends SentenceAnnotator {
         }
       }
     }
+
+    // Match TokensRegex
+    TokenSequenceMatcher tokenMatcher = DOUBT_PATTERN.matcher(tokens);
+    while (tokenMatcher.find()) {
+      List<CoreLabel> doubt = (List<CoreLabel>) tokenMatcher.groupNodes("$doubt");
+      List<CoreLabel> target = (List<CoreLabel>) tokenMatcher.groupNodes("$target");
+      for (CoreLabel word : doubt) {
+        OperatorSpec spec = new OperatorSpec(Operator.GENERAL_NEG_POLARITY,
+            word.index() - 1, word.index(),
+            target.get(0).index() - 1, target.get(target.size() - 1).index(),
+            0, 0,
+            tokens.size());
+        word.set(OperatorAnnotation.class, spec);
+      }
+
+    }
   }
 
   /**
@@ -484,6 +514,27 @@ public class NaturalLogicAnnotator extends SentenceAnnotator {
       OperatorSpec specOrNull = token.get(OperatorAnnotation.class);
       if (specOrNull != null) {
         operators.add(specOrNull);
+      }
+    }
+
+    // Make sure every node of the dependency tree has a polarity.
+    // This is separate from the code below in case the tokens in the dependency
+    // tree don't correspond to the tokens in the sentence. This happens at least
+    // when the constituency parser craps out on a long sentence, and the
+    // dependency tree is put together haphazardly.
+    if (sentence.containsKey(SemanticGraphCoreAnnotations.BasicDependenciesAnnotation.class)) {
+      for (IndexedWord token : sentence.get(SemanticGraphCoreAnnotations.BasicDependenciesAnnotation.class).vertexSet()) {
+        token.set(PolarityAnnotation.class, Polarity.DEFAULT);
+      }
+    }
+    if (sentence.containsKey(SemanticGraphCoreAnnotations.CollapsedDependenciesAnnotation.class)) {
+      for (IndexedWord token : sentence.get(SemanticGraphCoreAnnotations.CollapsedDependenciesAnnotation.class).vertexSet()) {
+        token.set(PolarityAnnotation.class, Polarity.DEFAULT);
+      }
+    }
+    if (sentence.containsKey(SemanticGraphCoreAnnotations.CollapsedCCProcessedDependenciesAnnotation.class)) {
+      for (IndexedWord token : sentence.get(SemanticGraphCoreAnnotations.CollapsedCCProcessedDependenciesAnnotation.class).vertexSet()) {
+        token.set(PolarityAnnotation.class, Polarity.DEFAULT);
       }
     }
 
@@ -515,7 +566,11 @@ public class NaturalLogicAnnotator extends SentenceAnnotator {
   /**
    * If false, don't annotate tokens for polarity but only find the operators and their scopes.
    */
-  public final boolean doPolarity;
+  @ArgumentParser.Option(name="doPolarity", gloss="Mark polarity in addition to quantifier scopes")
+  private boolean doPolarity = true;
+
+  @ArgumentParser.Option(name="neQuantifiers", gloss="If true, mark named entities as quantifiers.")
+  private boolean neQuantifiers = false;
 
   /**
    * Create a new annotator.
@@ -523,7 +578,7 @@ public class NaturalLogicAnnotator extends SentenceAnnotator {
    * @param props The properties to configure this annotator with.
    */
   public NaturalLogicAnnotator(String annotatorName, Properties props) {
-    this.doPolarity = Boolean.valueOf(props.getProperty(annotatorName + ".doPolarity", "true"));
+    ArgumentParser.fillOptions(this, annotatorName, props);
   }
 
   /**
@@ -564,18 +619,32 @@ public class NaturalLogicAnnotator extends SentenceAnnotator {
   /** {@inheritDoc} */
   @Override
   protected void doOneFailedSentence(Annotation annotation, CoreMap sentence) {
-    System.err.println("Failed to annotate: " + sentence.get(CoreAnnotations.TextAnnotation.class));
+    log.info("Failed to annotate: " + sentence.get(CoreAnnotations.TextAnnotation.class));
   }
 
   /** {@inheritDoc} */
   @Override
-  public Set<Requirement> requirementsSatisfied() {
-    return Collections.singleton(NATLOG_REQUIREMENT);
+  public Set<Class<? extends CoreAnnotation>> requirementsSatisfied() {
+    return Collections.unmodifiableSet(new ArraySet<>(Arrays.asList(
+        doPolarity ? NaturalLogicAnnotations.PolarityAnnotation.class : null,
+        NaturalLogicAnnotations.OperatorAnnotation.class
+    )));
   }
 
   /** {@inheritDoc} */
   @Override
-  public Set<Requirement> requires() {
-    return Annotator.TOKENIZE_SSPLIT_POS_DEPPARSE;  // TODO(gabor) can also use 'parse' annotator, technically
+  public Set<Class<? extends CoreAnnotation>> requires() {
+    return Collections.unmodifiableSet(new ArraySet<>(Arrays.asList(
+        CoreAnnotations.TextAnnotation.class,
+        CoreAnnotations.TokensAnnotation.class,
+        CoreAnnotations.IndexAnnotation.class,
+        CoreAnnotations.SentencesAnnotation.class,
+        CoreAnnotations.SentenceIndexAnnotation.class,
+        CoreAnnotations.PartOfSpeechAnnotation.class,
+        CoreAnnotations.LemmaAnnotation.class,
+        SemanticGraphCoreAnnotations.BasicDependenciesAnnotation.class,
+        SemanticGraphCoreAnnotations.CollapsedDependenciesAnnotation.class,
+        SemanticGraphCoreAnnotations.CollapsedCCProcessedDependenciesAnnotation.class
+    )));
   }
 }

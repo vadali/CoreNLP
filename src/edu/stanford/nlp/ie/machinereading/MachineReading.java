@@ -1,4 +1,5 @@
-package edu.stanford.nlp.ie.machinereading;
+package edu.stanford.nlp.ie.machinereading; 
+import edu.stanford.nlp.util.logging.Redwood;
 
 import java.io.File;
 import java.io.IOException;
@@ -28,7 +29,7 @@ import edu.stanford.nlp.pipeline.Annotation;
 import edu.stanford.nlp.pipeline.StanfordCoreNLP;
 import edu.stanford.nlp.trees.Tree;
 import edu.stanford.nlp.util.CoreMap;
-import edu.stanford.nlp.util.Execution;
+import edu.stanford.nlp.util.ArgumentParser;
 import edu.stanford.nlp.util.Pair;
 import edu.stanford.nlp.util.StringUtils;
 
@@ -54,7 +55,10 @@ import edu.stanford.nlp.util.StringUtils;
  * @author Mihai
  * 
  */
-public class MachineReading {
+public class MachineReading  {
+
+  /** A logger for this class */
+  private static Redwood.RedwoodChannels log = Redwood.channels(MachineReading.class);
   
   // Store command-line args so they can be passed to other classes
   private String[] args;
@@ -167,8 +171,8 @@ public class MachineReading {
     mr.auxReader = null;
     
     // no results printers needed
-    mr.entityResultsPrinterSet = new HashSet<ResultsPrinter>();
-    mr.setRelationResultsPrinterSet(new HashSet<ResultsPrinter>());
+    mr.entityResultsPrinterSet = new HashSet<>();
+    mr.setRelationResultsPrinterSet(new HashSet<>());
     
     // create the storage for the generated annotations
     mr.predictions = new Annotation[3][1];
@@ -199,9 +203,9 @@ public class MachineReading {
     // install global parameters
     MachineReading mr = new MachineReading(args);
     //TODO: 
-    Execution.fillOptions(MachineReadingProperties.class, args);
+    ArgumentParser.fillOptions(MachineReadingProperties.class, args);
     //Arguments.parse(args, mr);
-    System.err.println("PERCENTAGE OF TRAIN: " + MachineReadingProperties.percentageOfTrain);
+    log.info("PERCENTAGE OF TRAIN: " + MachineReadingProperties.percentageOfTrain);
     
     // convert args to properties
     Properties props = StringUtils.argsToProperties(args);
@@ -220,7 +224,7 @@ public class MachineReading {
     if (auxReader != null) {
       auxReader.setLoggerLevel(readerLogLevel);
     }
-    System.err.println("The reader log level is set to " + readerLogLevel);
+    log.info("The reader log level is set to " + readerLogLevel);
     //Execution.fillOptions(GenericDataSetReaderProps.class, args);
     //Arguments.parse(args, reader);
     
@@ -251,7 +255,7 @@ public class MachineReading {
     if (MachineReadingProperties.trainOnly) {
       this.forceRetraining= true;
     }
-    List<String> retMsg = new ArrayList<String>();
+    List<String> retMsg = new ArrayList<>();
     boolean haveSerializedEntityExtractor = serializedModelExists(MachineReadingProperties.serializedEntityExtractorPath);
     boolean haveSerializedRelationExtractor = serializedModelExists(MachineReadingProperties.serializedRelationExtractorPath);
     boolean haveSerializedEventExtractor = serializedModelExists(MachineReadingProperties.serializedEventExtractorPath);
@@ -306,7 +310,8 @@ public class MachineReading {
     if(! MachineReadingProperties.trainOnly){
       // merge test sets for the gold data
       Annotation gold = new Annotation("");
-      for(int i = 0; i < datasets.length; i ++) AnnotationUtils.addSentences(gold, datasets[i].second().get(CoreAnnotations.SentencesAnnotation.class));
+      for (Pair<Annotation, Annotation> dataset : datasets)
+        AnnotationUtils.addSentences(gold, dataset.second().get(SentencesAnnotation.class));
       
       // merge test sets with predicted annotations
       Annotation[] mergedPredictions = new Annotation[3];
@@ -345,7 +350,7 @@ public class MachineReading {
   }
   
   protected List<String> printTask(String taskName, Set<ResultsPrinter> printers, Annotation gold, Annotation pred) {
-    List<String> retMsg = new ArrayList<String>();
+    List<String> retMsg = new ArrayList<>();
     for (ResultsPrinter rp : printers){
       String msg = rp.printResults(gold, pred);
       retMsg.add(msg);
@@ -405,7 +410,7 @@ public class MachineReading {
         relationExtractor = BasicRelationExtractor.load(modelName);
       } else {
         RelationFeatureFactory rff = makeRelationFeatureFactory(MachineReadingProperties.relationFeatureFactoryClass, MachineReadingProperties.relationFeatures, MachineReadingProperties.doNotLexicalizeFirstArg);
-        Execution.fillOptions(rff, args);
+        ArgumentParser.fillOptions(rff, args);
 
         if (MachineReadingProperties.trainRelationsUsingPredictedEntities) {
       		// generate predicted entities
@@ -433,8 +438,8 @@ public class MachineReading {
           dataset = training;
         }
       	
-        Set<String> relationsToSkip = new HashSet<String>(StringUtils.split(MachineReadingProperties.relationsToSkipDuringTraining, ","));
-        List<List<RelationMention>> backedUpRelations = new ArrayList<List<RelationMention>>();
+        Set<String> relationsToSkip = new HashSet<>(StringUtils.split(MachineReadingProperties.relationsToSkipDuringTraining, ","));
+        List<List<RelationMention>> backedUpRelations = new ArrayList<>();
       	if (relationsToSkip.size() > 0) {
       	  // we need to backup the relations since removeSkippableRelations modifies dataset in place and we can't duplicate CoreMaps safely (or can we?)
           for (CoreMap sent : dataset.get(CoreAnnotations.SentencesAnnotation.class)) {
@@ -448,7 +453,7 @@ public class MachineReading {
       	//relationExtractor = new BasicRelationExtractor(rff, MachineReadingProperties.createUnrelatedRelations, makeRelationMentionFactory(MachineReadingProperties.relationMentionFactoryClass));
         relationExtractor = makeRelationExtractor(MachineReadingProperties.relationClassifier, rff, MachineReadingProperties.createUnrelatedRelations,
           makeRelationMentionFactory(MachineReadingProperties.relationMentionFactoryClass));
-        Execution.fillOptions(relationExtractor, args);
+        ArgumentParser.fillOptions(relationExtractor, args);
       	//Arguments.parse(args,relationExtractor);
         MachineReadingProperties.logger.info("Training relation extraction model...");
         relationExtractor.train(dataset);
@@ -524,7 +529,7 @@ public class MachineReading {
       if (relationMentions == null) {
         continue;
       }
-      List<RelationMention> newRelationMentions = new ArrayList<RelationMention>();
+      List<RelationMention> newRelationMentions = new ArrayList<>();
       for (RelationMention rm: relationMentions) {
         if (!relationsToSkip.contains(rm.getType())) {
           newRelationMentions.add(rm);
@@ -541,7 +546,7 @@ public class MachineReading {
     for (CoreMap sent : dataset.get(CoreAnnotations.SentencesAnnotation.class)) {
   		List<EntityMention> entityMentions = sent.get(MachineReadingAnnotations.EntityMentionsAnnotation.class);
   		List<RelationMention> relationMentions = sent.get(MachineReadingAnnotations.RelationMentionsAnnotation.class);
-  		List<RelationMention> newRels = new ArrayList<RelationMention>();
+  		List<RelationMention> newRels = new ArrayList<>();
       for (RelationMention rm : relationMentions) {
   			rm.setSentence(sent);
         if (rm.replaceGoldArgsWithPredicted(entityMentions)) {
@@ -677,7 +682,7 @@ public class MachineReading {
           AnnotationUtils.addSentence(trainingEnhanced, AnnotationUtils.getSentence(auxDataset, ind));
         }
       }
-      datasets[0] = new Pair<Annotation, Annotation>(trainingEnhanced, testing);
+      datasets[0] = new Pair<>(trainingEnhanced, testing);
       
       predictions = new Annotation[3][1];
     } else {
@@ -709,7 +714,7 @@ public class MachineReading {
 						    .getSentence(auxDataset, ind));
 					}
 				}
-        datasets[partition] = new Pair<Annotation, Annotation>(partitionTrain, partitionTest);
+        datasets[partition] = new Pair<>(partitionTrain, partitionTest);
       }
       
       predictions = new Annotation[3][MachineReadingProperties.kfold];
@@ -718,15 +723,15 @@ public class MachineReading {
   
   /** Keeps only the first percentage sentences from the given corpus */
   static Annotation keepPercentage(Annotation corpus, double percentage) {
-	  System.err.println("Using percentage of train: " + percentage);
+	  log.info("Using percentage of train: " + percentage);
 	  Annotation smaller = new Annotation(""); 
-	  List<CoreMap> sents = new ArrayList<CoreMap>();
+	  List<CoreMap> sents = new ArrayList<>();
 	  List<CoreMap> fullSents = corpus.get(SentencesAnnotation.class);
 	  double smallSize = (double) fullSents.size() * percentage;
 	  for(int i = 0; i < smallSize; i ++){
 		  sents.add(fullSents.get(i));
 	  }
-	  System.err.println("TRAIN corpus size reduced from " + fullSents.size() + " to " + sents.size());
+	  log.info("TRAIN corpus size reduced from " + fullSents.size() + " to " + sents.size());
 	  smaller.set(SentencesAnnotation.class, sents);
 	  return smaller;
   }
@@ -760,7 +765,7 @@ public class MachineReading {
   private Set<ResultsPrinter> makeResultsPrinters(String classes, String [] args) {
     MachineReadingProperties.logger.info("Making result printers from " + classes);
     String[] printerClassNames = classes.trim().split(",\\s*");
-    HashSet<ResultsPrinter> printers = new HashSet<ResultsPrinter>();
+    HashSet<ResultsPrinter> printers = new HashSet<>();
     for (String printerClassName : printerClassNames) {
       if(printerClassName.length() == 0) continue;
       ResultsPrinter rp;

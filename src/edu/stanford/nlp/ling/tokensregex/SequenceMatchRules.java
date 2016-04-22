@@ -240,7 +240,7 @@ public class SequenceMatchRules {
             if (annoKey instanceof Class) {
               annotationField = (Class) annoKey;
             } else if (annoKey instanceof String) {
-              annotationField = EnvLookup.lookupAnnotationKey(env, (String) annoKey);
+              annotationField = EnvLookup.lookupAnnotationKeyWithClassname(env, (String) annoKey);
             } else if (annotationField == null) {
               annotationField = CoreMap.class;
             } else {
@@ -303,7 +303,7 @@ public class SequenceMatchRules {
   public static Rule createRule(Env env, Expressions.CompositeValue cv) {
     Map<String, Object> attributes;
     cv = cv.simplifyNoTypeConversion(env);
-    attributes = new HashMap<String, Object>();//Generics.newHashMap();
+    attributes = new HashMap<>();//Generics.newHashMap();
     for (String s:cv.getAttributes()) {
       attributes.put(s, cv.getExpression(s));
     }
@@ -331,7 +331,7 @@ public class SequenceMatchRules {
     }
     AnnotationExtractRuleCreator ruleCreator = lookupExtractRuleCreator(env, ruleType);
     if (ruleCreator != null) {
-      Map<String,Object> attributes = new HashMap<String, Object>();//Generics.newHashMap();
+      Map<String,Object> attributes = new HashMap<>();//Generics.newHashMap();
       attributes.put("ruleType", ruleType);
       attributes.put("pattern", pattern);
       attributes.put("result", result);
@@ -350,7 +350,7 @@ public class SequenceMatchRules {
   public final static TextPatternExtractRuleCreator TEXT_PATTERN_EXTRACT_RULE_CREATOR = new TextPatternExtractRuleCreator();
   public final static MultiTokenPatternExtractRuleCreator MULTI_TOKEN_PATTERN_EXTRACT_RULE_CREATOR = new MultiTokenPatternExtractRuleCreator();
   public final static AnnotationExtractRuleCreator DEFAULT_EXTRACT_RULE_CREATOR = TOKEN_PATTERN_EXTRACT_RULE_CREATOR;
-  final static Map<String, AnnotationExtractRuleCreator> registeredRuleTypes = new HashMap<String, AnnotationExtractRuleCreator>();//Generics.newHashMap();
+  final static Map<String, AnnotationExtractRuleCreator> registeredRuleTypes = new HashMap<>();//Generics.newHashMap();
   static {
     registeredRuleTypes.put(TOKEN_PATTERN_RULE_TYPE, TOKEN_PATTERN_EXTRACT_RULE_CREATOR);
     registeredRuleTypes.put(COMPOSITE_RULE_TYPE, COMPOSITE_EXTRACT_RULE_CREATOR);
@@ -411,19 +411,18 @@ public class SequenceMatchRules {
   }
 
   public static MatchedExpression.SingleAnnotationExtractor createAnnotationExtractor(Env env, AnnotationExtractRule r) {
-    MatchedExpression.SingleAnnotationExtractor valueExtractor =
-            new MatchedExpression.SingleAnnotationExtractor();
-    valueExtractor.name = r.name;
-    valueExtractor.tokensAnnotationField = r.tokensAnnotationField;
-    valueExtractor.tokensResultAnnotationField = r.tokensResultAnnotationField;
-    valueExtractor.resultAnnotationField = r.resultAnnotationField;
-    valueExtractor.resultNestedAnnotationField = r.resultNestedAnnotationField;
-    valueExtractor.priority = r.priority;
-    valueExtractor.weight = r.weight;
-    valueExtractor.includeNested = r.includeNested;
-    valueExtractor.resultAnnotationExtractor = EnvLookup.getDefaultResultAnnotationExtractor(env);
-    valueExtractor.tokensAggregators = EnvLookup.getDefaultTokensAggregators(env);
-    return valueExtractor;
+    MatchedExpression.SingleAnnotationExtractor extractor = new MatchedExpression.SingleAnnotationExtractor();
+    extractor.name = r.name;
+    extractor.tokensAnnotationField = r.tokensAnnotationField;
+    extractor.tokensResultAnnotationField = r.tokensResultAnnotationField;
+    extractor.resultAnnotationField = r.resultAnnotationField;
+    extractor.resultNestedAnnotationField = r.resultNestedAnnotationField;
+    extractor.priority = r.priority;
+    extractor.weight = r.weight;
+    extractor.includeNested = r.includeNested;
+    extractor.resultAnnotationExtractor = EnvLookup.getDefaultResultAnnotationExtractor(env);
+    extractor.tokensAggregator = EnvLookup.getDefaultTokensAggregator(env);
+    return extractor;
   }
 
   public static class CompositeExtractRuleCreator extends AnnotationExtractRuleCreator {
@@ -443,16 +442,21 @@ public class SequenceMatchRules {
                                      Expression action,
                                      Expression result)
     {
-      MatchedExpression.SingleAnnotationExtractor valueExtractor = createAnnotationExtractor(env, r);
-      valueExtractor.valueExtractor =
-              new CoreMapFunctionApplier< List<? extends CoreMap>, Value>(
-                      env, r.annotationField,
-                      new SequencePatternExtractRule<CoreMap, Value>(
-                              pattern,
-                              new SequenceMatchResultExtractor<CoreMap>(env, action, result), r.matchFindType, r.matchWithResults));
-      r.extractRule = new SequencePatternExtractRule<CoreMap, MatchedExpression>(pattern,
-                      new SequenceMatchedExpressionExtractor( valueExtractor, r.matchedExpressionGroup), r.matchFindType, r.matchWithResults);
-      r.filterRule = new AnnotationMatchedFilter(valueExtractor);
+      MatchedExpression.SingleAnnotationExtractor annotationExtractor = createAnnotationExtractor(env, r);
+      SequenceMatchResultExtractor<CoreMap> valueExtractor = new SequenceMatchResultExtractor<>(env, action, result);
+      SequencePatternExtractRule<CoreMap,Value> valueExtractRule = new SequencePatternExtractRule<>(pattern, valueExtractor, r.matchFindType, r.matchWithResults);
+      SequenceMatchedExpressionExtractor exprExtractor = new SequenceMatchedExpressionExtractor( annotationExtractor, r.matchedExpressionGroup );
+      SequencePatternExtractRule<CoreMap, MatchedExpression> exprExtractRule =
+        new SequencePatternExtractRule<>(pattern, exprExtractor, r.matchFindType, r.matchWithResults);
+
+      annotationExtractor.expressionToValue = matched -> {
+        if (matched != null && matched.context != null && matched.context instanceof SequenceMatchResult ) {
+          return valueExtractor.apply( (SequenceMatchResult<CoreMap>) matched.context);
+        } else return null;
+      };
+      annotationExtractor.valueExtractor = new CoreMapFunctionApplier<>(env, r.annotationField, valueExtractRule);
+      r.extractRule = exprExtractRule;
+      r.filterRule = new AnnotationMatchedFilter(annotationExtractor);
       r.pattern = pattern;
       r.result = result;
       pattern.weight = r.weight;
@@ -503,30 +507,26 @@ public class SequenceMatchRules {
                                      Expression action,
                                      Expression result)
     {
-      MatchedExpression.SingleAnnotationExtractor valueExtractor = createAnnotationExtractor(env, r);
-      if (r.annotationField != null && r.annotationField != CoreMap.class) {
-        valueExtractor.valueExtractor =
-              new CoreMapFunctionApplier< List<? extends CoreMap>, Value >(
-                      env, r.annotationField,
-                      new SequencePatternExtractRule<CoreMap, Value>(
-                              pattern,
-                              new SequenceMatchResultExtractor<CoreMap>(env, action, result), r.matchFindType, r.matchWithResults));
-        r.extractRule = new CoreMapExtractRule< List<? extends CoreMap>, MatchedExpression >(
-              env, r.annotationField,
-              new SequencePatternExtractRule<CoreMap, MatchedExpression>(pattern,
-                      new SequenceMatchedExpressionExtractor( valueExtractor, r.matchedExpressionGroup), r.matchFindType, r.matchWithResults));
-      } else {
-        valueExtractor.valueExtractor =
-                new CoreMapToListFunctionApplier< Value >(
-                        env, new SequencePatternExtractRule<CoreMap, Value>(
-                                pattern,
-                                new SequenceMatchResultExtractor<CoreMap>(env, action, result), r.matchFindType, r.matchWithResults));
-        r.extractRule = new CoreMapToListExtractRule< MatchedExpression >(
-                new SequencePatternExtractRule<CoreMap, MatchedExpression>(pattern,
-                        new SequenceMatchedExpressionExtractor( valueExtractor, r.matchedExpressionGroup), r.matchFindType, r.matchWithResults));
+      MatchedExpression.SingleAnnotationExtractor annotationExtractor = createAnnotationExtractor(env, r);
+      SequenceMatchResultExtractor<CoreMap> valueExtractor = new SequenceMatchResultExtractor<>(env, action, result);
+      SequencePatternExtractRule<CoreMap,Value> valueExtractRule = new SequencePatternExtractRule<>(pattern, valueExtractor, r.matchFindType, r.matchWithResults);
+      SequenceMatchedExpressionExtractor exprExtractor = new SequenceMatchedExpressionExtractor( annotationExtractor, r.matchedExpressionGroup );
+      SequencePatternExtractRule<CoreMap, MatchedExpression> exprExtractRule =
+        new SequencePatternExtractRule<>(pattern, exprExtractor, r.matchFindType, r.matchWithResults);
 
+      annotationExtractor.expressionToValue = matched -> {
+        if (matched != null && matched.context != null && matched.context instanceof SequenceMatchResult ) {
+          return valueExtractor.apply( (SequenceMatchResult<CoreMap>) matched.context);
+        } else return null;
+      };
+      if (r.annotationField != null && r.annotationField != CoreMap.class) {
+        annotationExtractor.valueExtractor = new CoreMapFunctionApplier<>(env, r.annotationField, valueExtractRule);
+        r.extractRule = new CoreMapExtractRule<>(env, r.annotationField, exprExtractRule);
+      } else {
+        annotationExtractor.valueExtractor = new CoreMapToListFunctionApplier<>(env, valueExtractRule);
+        r.extractRule = new CoreMapToListExtractRule<>(exprExtractRule);
       }
-      r.filterRule = new AnnotationMatchedFilter(valueExtractor);
+      r.filterRule = new AnnotationMatchedFilter(annotationExtractor);
       r.pattern = pattern;
       r.result = result;
       pattern.weight = r.weight;
@@ -563,30 +563,26 @@ public class SequenceMatchRules {
                                      Expression action,
                                      Expression result)
     {
-      MatchedExpression.SingleAnnotationExtractor valueExtractor = createAnnotationExtractor(env, r);
-      if (r.annotationField != null && r.annotationField != CoreMap.class) {
-        valueExtractor.valueExtractor =
-          new CoreMapFunctionApplier< List<? extends CoreMap>, Value >(
-            env, r.annotationField,
-            new MultiSequencePatternExtractRule<CoreMap, Value>(
-              pattern,
-              new SequenceMatchResultExtractor<CoreMap>(env, action, result)));
-        r.extractRule = new CoreMapExtractRule< List<? extends CoreMap>, MatchedExpression >(
-          env, r.annotationField,
-          new MultiSequencePatternExtractRule<CoreMap, MatchedExpression>(pattern,
-            new SequenceMatchedExpressionExtractor( valueExtractor, r.matchedExpressionGroup)));
-      } else {
-        valueExtractor.valueExtractor =
-          new CoreMapToListFunctionApplier< Value >(
-            env, new MultiSequencePatternExtractRule<CoreMap, Value>(
-            pattern,
-            new SequenceMatchResultExtractor<CoreMap>(env, action, result)));
-        r.extractRule = new CoreMapToListExtractRule< MatchedExpression >(
-          new MultiSequencePatternExtractRule<CoreMap, MatchedExpression>(pattern,
-            new SequenceMatchedExpressionExtractor( valueExtractor, r.matchedExpressionGroup)));
+      MatchedExpression.SingleAnnotationExtractor annotationExtractor = createAnnotationExtractor(env, r);
+      SequenceMatchResultExtractor<CoreMap> valueExtractor = new SequenceMatchResultExtractor<>(env, action, result);
+      MultiSequencePatternExtractRule<CoreMap,Value> valueExtractRule = new MultiSequencePatternExtractRule<>(pattern, valueExtractor);
+      SequenceMatchedExpressionExtractor exprExtractor = new SequenceMatchedExpressionExtractor( annotationExtractor, r.matchedExpressionGroup );
+      MultiSequencePatternExtractRule<CoreMap, MatchedExpression> exprExtractRule =
+        new MultiSequencePatternExtractRule<>(pattern, exprExtractor);
 
+      annotationExtractor.expressionToValue = matched -> {
+        if (matched != null && matched.context != null && matched.context instanceof SequenceMatchResult ) {
+          return valueExtractor.apply( (SequenceMatchResult<CoreMap>) matched.context);
+        } else return null;
+      };
+      if (r.annotationField != null && r.annotationField != CoreMap.class) {
+        annotationExtractor.valueExtractor = new CoreMapFunctionApplier<>(env, r.annotationField, valueExtractRule);
+        r.extractRule = new CoreMapExtractRule<>(env, r.annotationField, exprExtractRule);
+      } else {
+        annotationExtractor.valueExtractor = new CoreMapToListFunctionApplier<>(env, valueExtractRule);
+        r.extractRule = new CoreMapToListExtractRule<>(exprExtractRule);
       }
-      r.filterRule = new AnnotationMatchedFilter(valueExtractor);
+      r.filterRule = new AnnotationMatchedFilter(annotationExtractor);
       r.pattern = pattern;
       r.result = result;
     }
@@ -632,19 +628,16 @@ public class SequenceMatchRules {
                                      Expression action,
                                      Expression result)
     {
-      final MatchedExpression.SingleAnnotationExtractor valueExtractor = createAnnotationExtractor(env, r);
+      final MatchedExpression.SingleAnnotationExtractor annotationExtractor = createAnnotationExtractor(env, r);
       Pattern pattern = env.getStringPattern(expr);
-      valueExtractor.valueExtractor =
-              new CoreMapFunctionApplier< String, Value >(
-                      env, r.annotationField,
-                      new StringPatternExtractRule<Value>(
-                              pattern,
-                              new StringMatchResultExtractor(env, action, result)));
-      r.extractRule = new CoreMapExtractRule< String, MatchedExpression >(
-              env, r.annotationField,
-              new StringPatternExtractRule<MatchedExpression>(pattern,
-                      new StringMatchedExpressionExtractor( valueExtractor, r.matchedExpressionGroup)));
-      r.filterRule = new AnnotationMatchedFilter(valueExtractor);
+      StringMatchResultExtractor valueExtractor = new StringMatchResultExtractor(env, action, result);
+      StringPatternExtractRule<Value> valueExtractRule = new StringPatternExtractRule<>(pattern, valueExtractor);
+      StringMatchedExpressionExtractor exprExtractor = new StringMatchedExpressionExtractor( annotationExtractor, r.matchedExpressionGroup );
+      StringPatternExtractRule<MatchedExpression> exprExtractRule = new StringPatternExtractRule<>(pattern, exprExtractor);
+
+      annotationExtractor.valueExtractor = new CoreMapFunctionApplier<>(env, r.annotationField, valueExtractRule);
+      r.extractRule = new CoreMapExtractRule<>(env, r.annotationField, exprExtractRule);
+      r.filterRule = new AnnotationMatchedFilter(annotationExtractor);
       r.pattern = pattern;
       r.result = result;
     }
@@ -705,7 +698,7 @@ public class SequenceMatchRules {
       this.action = action;
       this.result = result;
     }
-    
+
     public StringMatchResultExtractor(Env env, Expression result) {
       this.env = env;
       this.result = result;
@@ -752,12 +745,15 @@ public class SequenceMatchRules {
   }
 
   /**
-   * Interface for a rule that extracts a list of matched items from a input
+   * Interface for a rule that extracts a list of matched items from an input.
+   *
    * @param <I> input type
    * @param <O> output type
    */
-  public static interface ExtractRule<I,O> {
-    public boolean extract(I in, List<O> out);
+  public interface ExtractRule<I,O> {
+
+    boolean extract(I in, List<O> out);
+
   }
 
   /**
@@ -765,8 +761,8 @@ public class SequenceMatchRules {
    * @param <I> input type
    * @param <O> output type
    */
-  public static class FilterExtractRule<I,O> implements ExtractRule<I,O>
-  {
+  public static class FilterExtractRule<I,O> implements ExtractRule<I,O> {
+
     Predicate<I> filter;
     ExtractRule<I,O> rule;
 
@@ -775,11 +771,13 @@ public class SequenceMatchRules {
       this.rule = rule;
     }
 
+    @SafeVarargs
     public FilterExtractRule(Predicate<I> filter, ExtractRule<I,O>... rules) {
       this.filter = filter;
-      this.rule = new ListExtractRule<I,O>(rules);
+      this.rule = new ListExtractRule<>(rules);
     }
 
+    @Override
     public boolean extract(I in, List<O> out) {
       if (filter.test(in)) {
         return rule.extract(in,out);
@@ -791,27 +789,27 @@ public class SequenceMatchRules {
 
   /**
    * Extraction rule that applies a list of rules in sequence and aggregates
-   *   all matches found
+   * all matches found.
+   *
    * @param <I> input type
    * @param <O> output type
    */
-  public static class ListExtractRule<I,O> implements ExtractRule<I,O>
-  {
+  public static class ListExtractRule<I,O> implements ExtractRule<I,O> {
+
     List<ExtractRule<I,O>> rules;
 
     public ListExtractRule(Collection<ExtractRule<I,O>> rules)
     {
-      this.rules = new ArrayList<ExtractRule<I,O>>(rules);
+      this.rules = new ArrayList<>(rules);
     }
 
-    public ListExtractRule(ExtractRule<I,O>... rules)
-    {
-      this.rules = new ArrayList<ExtractRule<I,O>>(rules.length);
-      for (ExtractRule<I,O> rule:rules) {
-        this.rules.add(rule);
-      }
+    @SafeVarargs
+    public ListExtractRule(ExtractRule<I,O>... rules) {
+      this.rules = new ArrayList<>(rules.length);
+      Collections.addAll(this.rules, rules);
     }
 
+    @Override
     public boolean extract(I in, List<O> out) {
       boolean extracted = false;
       for (ExtractRule<I,O> rule:rules) {
@@ -822,17 +820,28 @@ public class SequenceMatchRules {
       return extracted;
     }
 
-    public void addRules(ExtractRule<I,O>... rules)
-    {
-      for (ExtractRule<I,O> rule:rules) {
-        this.rules.add(rule);
-      }
+    @SafeVarargs
+    public final void addRules(ExtractRule<I, O>... rules) {
+      Collections.addAll(this.rules, rules);
     }
 
     public void addRules(Collection<ExtractRule<I,O>> rules)
     {
       this.rules.addAll(rules);
     }
+
+    public String ruleList() {
+      List<String> names = new ArrayList<>();
+      for (ExtractRule rule: rules) {
+        if (rule instanceof AnnotationExtractRule) {
+          names.add(((AnnotationExtractRule) rule).name);
+        } else {
+          names.add(rule.getClass().getName());
+        }
+      }
+      return names.toString();
+    }
+
   }
 
   /**
@@ -1077,6 +1086,10 @@ public class SequenceMatchRules {
       }
       if (Double.isNaN(te.weight)) {
         te.weight = matched.score();
+      }
+      if (this.group != 0) {
+        // Save context so value evaluation can happen
+        te.context = matched.toBasicSequenceMatchResult();
       }
       return te;
     }

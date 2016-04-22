@@ -1,4 +1,5 @@
-package edu.stanford.nlp.pipeline;
+package edu.stanford.nlp.pipeline; 
+import edu.stanford.nlp.util.logging.Redwood;
 
 import edu.stanford.nlp.ie.NERClassifierCombiner;
 import edu.stanford.nlp.ie.regexp.NumberSequenceClassifier;
@@ -19,7 +20,10 @@ import java.util.*;
  *
  * @author Gabor Angeli
  */
-public class AnnotatorImplementations {
+public class AnnotatorImplementations  {
+
+  /** A logger for this class */
+  private static Redwood.RedwoodChannels log = Redwood.channels(AnnotatorImplementations.class);
 
   /**
    * Tokenize, emulating the Penn Treebank
@@ -82,7 +86,7 @@ public class AnnotatorImplementations {
     if (models.isEmpty()) {
       // Allow for no real NER model - can just use numeric classifiers or SUTime.
       // Have to unset ner.model, so unlikely that people got here by accident.
-      System.err.println("WARNING: no NER models specified");
+      log.info("WARNING: no NER models specified");
     }
 
     boolean applyNumericClassifiers =
@@ -100,6 +104,11 @@ public class AnnotatorImplementations {
 
     Properties combinerProperties = PropertiesUtils.extractSelectedProperties(properties,
             NERClassifierCombiner.DEFAULT_PASS_DOWN_PROPERTIES);
+    if (useSUTime) {
+      // Make sure SUTime parameters are included
+      Properties sutimeProps = PropertiesUtils.extractPrefixedProperties(properties, NumberSequenceClassifier.SUTIME_PROPERTY  + ".", true);
+      PropertiesUtils.overWriteProperties(combinerProperties, sutimeProps);
+    }
     NERClassifierCombiner nerCombiner = new NERClassifierCombiner(applyNumericClassifiers,
             useSUTime, combinerProperties, loadPaths);
 
@@ -195,9 +204,30 @@ public class AnnotatorImplementations {
   }
 
   /**
-   * Annotate for coreference
+   * Annotate for mention (statistical or hybrid)
+   */
+  public Annotator mention(Properties properties) {
+    // TO DO: split up coref and mention properties
+    Properties corefProperties = PropertiesUtils.extractPrefixedProperties(properties,
+            Annotator.STANFORD_COREF + ".",
+            true);
+    return new MentionAnnotator(corefProperties);
+  }
+
+  /**
+   * Annotate for coreference (statistical or hybrid)
    */
   public Annotator coref(Properties properties) {
+    Properties corefProperties = PropertiesUtils.extractPrefixedProperties(properties,
+            Annotator.STANFORD_COREF + ".",
+            true);
+    return new CorefAnnotator(corefProperties);
+  }
+
+  /**
+   * Annotate for coreference (deterministic)
+   */
+  public Annotator dcoref(Properties properties) {
     return new DeterministicCorefAnnotator(properties);
   }
 
@@ -251,4 +281,21 @@ public class AnnotatorImplementations {
     return new QuoteAnnotator(relevantProperties);
   }
 
+  /**
+   * Add universal dependencies features
+   */
+  public Annotator udfeats(Properties properties) {
+    return new UDFeatureAnnotator();
+  }
+
+  /**
+   * Annotate for KBP relations
+   */
+  public Annotator kbp(Properties properties) {
+    return new KBPAnnotator(Annotator.STANFORD_KBP, properties);
+  }
+
+  public Annotator link(Properties properties) {
+    return new WikidictAnnotator(Annotator.STANFORD_LINK, properties);
+  }
 }

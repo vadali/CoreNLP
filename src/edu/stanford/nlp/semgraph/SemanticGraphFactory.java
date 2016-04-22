@@ -1,4 +1,5 @@
-package edu.stanford.nlp.semgraph;
+package edu.stanford.nlp.semgraph; 
+import edu.stanford.nlp.util.logging.Redwood;
 
 import edu.stanford.nlp.ling.IndexedWord;
 import edu.stanford.nlp.trees.*;
@@ -14,13 +15,16 @@ import java.util.*;
  *
  * @author rafferty
  */
-public class SemanticGraphFactory {
+public class SemanticGraphFactory  {
+
+  /** A logger for this class */
+  private static Redwood.RedwoodChannels log = Redwood.channels(SemanticGraphFactory.class);
 
   private SemanticGraphFactory() {} // just static factory methods
 
   private static final boolean INCLUDE_PUNCTUATION_DEPENDENCIES = false;
 
-  public static enum Mode {
+  public enum Mode {
     COLLAPSED_TREE,
     /** collapse: Whether to do "collapsing" of pairs of dependencies into
      *  single dependencies, e.g., for prepositions and conjunctions.
@@ -137,10 +141,9 @@ public class SemanticGraphFactory {
         wordFilt = new PennTreebankLanguagePack().punctuationWordRejectFilter();
       }
       gs = new EnglishGrammaticalStructure(tree,
-          wordFilt,
-              new SemanticHeadFinder(true),
-              threadSafe);
-            
+              wordFilt,
+              new SemanticHeadFinder(true));
+
     } else {
       Predicate<String> tagFilt;
       if (INCLUDE_PUNCTUATION_DEPENDENCIES) {
@@ -152,14 +155,14 @@ public class SemanticGraphFactory {
               tagFilt,
               new UniversalSemanticHeadFinder(true),
               threadSafe);
-      
+
     }
     return makeFromTree(gs, mode, includeExtras,
                         threadSafe, filter);
   }
 
   /**
-   * @see edu.stanford.nlp.semgraph.SemanticGraphFactory#makeFromTree(edu.stanford.nlp.trees.Tree, edu.stanford.nlp.semgraph.SemanticGraphFactory.Mode, edu.stanford.nlp.trees.GrammaticalStructure.Extras, boolean, java.util.function.Predicate)
+   * @see edu.stanford.nlp.semgraph.SemanticGraphFactory#makeFromTree(edu.stanford.nlp.trees.Tree, edu.stanford.nlp.semgraph.SemanticGraphFactory.Mode, edu.stanford.nlp.trees.GrammaticalStructure.Extras, boolean, java.util.function.Predicate, boolean)
    */
   @Deprecated
   public static SemanticGraph makeFromTree(Tree tree,
@@ -213,7 +216,7 @@ public class SemanticGraphFactory {
     // which meant they were ignored by the RTE system. Changed. (pado)
     // See also the SemanticGraph constructor.
 
-    //System.err.println(deps.toString());
+    //log.info(deps.toString());
     return new SemanticGraph(deps);
   }
 
@@ -240,7 +243,7 @@ public class SemanticGraphFactory {
 
 
   /**
-   * @see edu.stanford.nlp.semgraph.SemanticGraphFactory#makeFromTree(edu.stanford.nlp.trees.Tree, edu.stanford.nlp.semgraph.SemanticGraphFactory.Mode, edu.stanford.nlp.trees.GrammaticalStructure.Extras, boolean, java.util.function.Predicate)
+   * @see edu.stanford.nlp.semgraph.SemanticGraphFactory#makeFromTree(edu.stanford.nlp.trees.Tree, edu.stanford.nlp.semgraph.SemanticGraphFactory.Mode, edu.stanford.nlp.trees.GrammaticalStructure.Extras, boolean, java.util.function.Predicate, boolean)
    */
   public static SemanticGraph makeFromTree(Tree tree,
                                            Mode mode,
@@ -250,7 +253,7 @@ public class SemanticGraphFactory {
   }
 
   /**
-   * @see edu.stanford.nlp.semgraph.SemanticGraphFactory#makeFromTree(edu.stanford.nlp.trees.Tree, edu.stanford.nlp.semgraph.SemanticGraphFactory.Mode, edu.stanford.nlp.trees.GrammaticalStructure.Extras, java.util.function.Predicate)
+   * @see edu.stanford.nlp.semgraph.SemanticGraphFactory#makeFromTree(edu.stanford.nlp.trees.Tree, edu.stanford.nlp.semgraph.SemanticGraphFactory.Mode, edu.stanford.nlp.trees.GrammaticalStructure.Extras, boolean, java.util.function.Predicate, boolean)
    */
   @Deprecated
   public static SemanticGraph makeFromTree(Tree tree,
@@ -262,7 +265,7 @@ public class SemanticGraphFactory {
 
 
   /**
-   * @see edu.stanford.nlp.semgraph.SemanticGraphFactory#makeFromTree(edu.stanford.nlp.trees.Tree, edu.stanford.nlp.semgraph.SemanticGraphFactory.Mode, edu.stanford.nlp.trees.GrammaticalStructure.Extras, boolean, java.util.function.Predicate)
+   * @see edu.stanford.nlp.semgraph.SemanticGraphFactory#makeFromTree(edu.stanford.nlp.trees.Tree, edu.stanford.nlp.semgraph.SemanticGraphFactory.Mode, edu.stanford.nlp.trees.GrammaticalStructure.Extras, boolean, java.util.function.Predicate, boolean)
    */
   public static SemanticGraph makeFromTree(Tree tree,
                                            Mode mode,
@@ -364,8 +367,8 @@ public class SemanticGraphFactory {
    * adding additional nodes.
    */
   public static SemanticGraph makeFromVertices(SemanticGraph sg, Collection<IndexedWord> nodes) {
-    List<SemanticGraphEdge> edgesToAdd = new ArrayList<SemanticGraphEdge>();
-    List<IndexedWord> nodesToAdd = new ArrayList<IndexedWord>(nodes);
+    List<SemanticGraphEdge> edgesToAdd = new ArrayList<>();
+    List<IndexedWord> nodesToAdd = new ArrayList<>(nodes);
     for (IndexedWord nodeA :nodes) {
       for (IndexedWord nodeB : nodes) {
         if (nodeA != nodeB) {
@@ -451,7 +454,7 @@ public class SemanticGraphFactory {
                                                  List<Integer> lengths) {
     SemanticGraph newGraph = new SemanticGraph();
     Map<Integer, IndexedWord> newWords = Generics.newHashMap();
-    List<IndexedWord> newRoots = new ArrayList<IndexedWord>();
+    List<IndexedWord> newRoots = new ArrayList<>();
     int vertexOffset = 0;
     for (int i = 0; i < graphs.size(); ++i) {
       SemanticGraph graph = graphs.get(i);

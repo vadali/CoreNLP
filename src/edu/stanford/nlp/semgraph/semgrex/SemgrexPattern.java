@@ -1,4 +1,5 @@
-package edu.stanford.nlp.semgraph.semgrex;
+package edu.stanford.nlp.semgraph.semgrex; 
+import edu.stanford.nlp.util.logging.Redwood;
 
 import java.io.*;
 import java.util.*;
@@ -7,7 +8,7 @@ import edu.stanford.nlp.semgraph.SemanticGraph;
 import edu.stanford.nlp.semgraph.SemanticGraphFactory;
 import edu.stanford.nlp.io.IOUtils;
 import edu.stanford.nlp.ling.*;
-import edu.stanford.nlp.trees.CoNLLUDocumentReader;
+import edu.stanford.nlp.trees.ud.CoNLLUDocumentReader;
 import edu.stanford.nlp.trees.GrammaticalStructure;
 import edu.stanford.nlp.trees.MemoryTreebank;
 import edu.stanford.nlp.trees.Tree;
@@ -50,12 +51,17 @@ import edu.stanford.nlp.util.StringUtils;
  * <table border = "1">
  * <tr><th>Symbol<th>Meaning
  * <tr><td>A &lt;reln B <td> A is the dependent of a relation reln with B
- * <tr><td>A &gt;reln B <td>A is the governer of a relation reln with B
+ * <tr><td>A &gt;reln B <td>A is the governor of a relation reln with B
  * <tr><td>A &lt;&lt;reln B <td>A is the dependent of a relation reln in a chain to B following dep-&gt;gov paths
- * <tr><td>A &gt;&gt;reln B <td>A is the governer of a relation reln in a chain to B following gov-&gt;dep paths
+ * <tr><td>A &gt;&gt;reln B <td>A is the governor of a relation reln in a chain to B following gov-&gt;dep paths
  * <tr><td>A x,y&lt;&lt;reln B <td>A is the dependent of a relation reln in a chain to B following dep-&gt;gov paths between distances of x and y
- * <tr><td>A x,y&gt;&gt;reln B <td>A is the governer of a relation reln in a chain to B following gov-&gt;dep paths between distances of x and y
+ * <tr><td>A x,y&gt;&gt;reln B <td>A is the governor of a relation reln in a chain to B following gov-&gt;dep paths between distances of x and y
  * <tr><td>A == B <td>A and B are the same nodes in the same graph
+ * <tr><td>A . B <td>A is immediately precedes B, i.e. A.index() == B.index() - 1
+ * <tr><td>A $+ B <td>B is a right immediate sibling of A, i.e. A and B have the same parent and A.index() == B.index() - 1
+ * <tr><td>A $- B <td>B is a right immediate sibling of A, i.e. A and B have the same parent and A.index() == B.index() + 1
+ * <tr><td>A $++ B <td>B is a right sibling of A, i.e. A and B have the same parent and A.index() < B.index()
+ * <tr><td>A $-- B <td>B is a left sibling of A, i.e. A and B have the same parent and A.index() > B.index()
  * <tr><td>A @ B <td>A is aligned to B
  * </table>
  * <p/>
@@ -64,8 +70,8 @@ import edu.stanford.nlp.util.StringUtils;
  * node in the chain. For example, "<code>{} &gt;nsubj {} &gt;dobj
  * {}</code>" means "any node that is the governor of both a nsubj and
  * a dobj relation".  If instead what you want is a node that is the
- * governer of a nsubj relation with a node that is itself the
- * governer of dobj relation, you should write: "<code>{} &gt;nsubj
+ * governor of a nsubj relation with a node that is itself the
+ * governor of dobj relation, you should write: "<code>{} &gt;nsubj
  * ({} &gt;dobj {})</code>". <p/>
  *
  * If a relation type is specified for the &lt;&lt; relation, the
@@ -159,14 +165,17 @@ import edu.stanford.nlp.util.StringUtils;
  *
  * @author Chloe Kiddon
  */
-public abstract class SemgrexPattern implements Serializable {
+public abstract class SemgrexPattern implements Serializable  {
+
+  /** A logger for this class */
+  private static Redwood.RedwoodChannels log = Redwood.channels(SemgrexPattern.class);
 
   private static final long serialVersionUID = 1722052832350596732L;
   private boolean neg = false;
   private boolean opt = false;
   private String patternString; // conceptually final, but can't do because of parsing
 
-  Env env;
+  protected Env env; //always set with setEnv to make sure that it is also availble to child patterns
 
   // package private constructor
   SemgrexPattern() {
@@ -272,7 +281,7 @@ public abstract class SemgrexPattern implements Serializable {
     try {
       SemgrexParser parser = new SemgrexParser(new StringReader(semgrex + "\n"));
       SemgrexPattern newPattern = parser.Root();
-      newPattern.env = env;
+      newPattern.setEnv(env);
       newPattern.patternString = semgrex;
       return newPattern;
     } catch (ParseException ex) {
@@ -289,6 +298,18 @@ public abstract class SemgrexPattern implements Serializable {
   public String pattern() {
     return patternString;
   }
+
+  /**
+   * Recursively sets the env variable to this pattern and all its children
+   *
+   * @param env
+   */
+  public void setEnv(Env env) {
+    this.env = env;
+    this.getChildren().stream().forEach(p -> p.setEnv(env));
+  }
+
+
 
   // printing methods
   // -----------------------------------------------------------
@@ -368,16 +389,16 @@ public abstract class SemgrexPattern implements Serializable {
 
 
   public static void help() {
-    System.err.println("Possible arguments for SemgrexPattern:");
-    System.err.println(PATTERN + ": what pattern to use for matching");
-    System.err.println(TREE_FILE + ": a file of trees to process");
-    System.err.println(CONLLU_FILE + ": a CoNLL-U file of dependency trees to process");
-    System.err.println(MODE + ": what mode for dependencies.  basic, collapsed, or ccprocessed.  To get 'noncollapsed', use basic with extras");
-    System.err.println(EXTRAS + ": whether or not to use extras");
-    System.err.println(OUTPUT_FORMAT_OPTION + ": output format of matches. list or offset. 'list' prints the graph as a list of dependencies, "
+    log.info("Possible arguments for SemgrexPattern:");
+    log.info(PATTERN + ": what pattern to use for matching");
+    log.info(TREE_FILE + ": a file of trees to process");
+    log.info(CONLLU_FILE + ": a CoNLL-U file of dependency trees to process");
+    log.info(MODE + ": what mode for dependencies.  basic, collapsed, or ccprocessed.  To get 'noncollapsed', use basic with extras");
+    log.info(EXTRAS + ": whether or not to use extras");
+    log.info(OUTPUT_FORMAT_OPTION + ": output format of matches. list or offset. 'list' prints the graph as a list of dependencies, "
                          + "'offset' prints the filename and the line offset in the ConLL-U file.");
-    System.err.println();
-    System.err.println(PATTERN + " is required");
+    log.info();
+    log.info(PATTERN + " is required");
   }
 
   /**
@@ -430,7 +451,7 @@ public abstract class SemgrexPattern implements Serializable {
     // TODO: allow other sources of graphs, such as dependency files
     if (argsMap.containsKey(TREE_FILE) && argsMap.get(TREE_FILE).length > 0) {
       for (String treeFile : argsMap.get(TREE_FILE)) {
-        System.err.println("Loading file " + treeFile);
+        log.info("Loading file " + treeFile);
         MemoryTreebank treebank = new MemoryTreebank(new TreeNormalizer());
         treebank.loadPath(treeFile);
         for (Tree tree : treebank) {
@@ -444,7 +465,7 @@ public abstract class SemgrexPattern implements Serializable {
     if (argsMap.containsKey(CONLLU_FILE) && argsMap.get(CONLLU_FILE).length > 0) {
       CoNLLUDocumentReader reader = new CoNLLUDocumentReader();
       for (String conlluFile : argsMap.get(CONLLU_FILE)) {
-        System.err.println("Loading file " + conlluFile);
+        log.info("Loading file " + conlluFile);
         Iterator<SemanticGraph> it = reader.getIterator(IOUtils.readerFromString(conlluFile));
 
         while (it.hasNext()) {
@@ -461,18 +482,18 @@ public abstract class SemgrexPattern implements Serializable {
       }
 
       if (outputFormat == OutputFormat.LIST) {
-        System.err.println("Matched graph:");
-        System.err.println(graph.toString(SemanticGraph.OutputFormat.LIST));
+        log.info("Matched graph:");
+        log.info(graph.toString(SemanticGraph.OutputFormat.LIST));
         boolean found = true;
         while (found) {
-          System.err.println("Matches at: " + matcher.getMatch().value() + "-" + matcher.getMatch().index());
+          log.info("Matches at: " + matcher.getMatch().value() + "-" + matcher.getMatch().index());
           List<String> nodeNames = Generics.newArrayList();
           nodeNames.addAll(matcher.getNodeNames());
           Collections.sort(nodeNames);
           for (String name : nodeNames) {
-            System.err.println("  " + name + ": " + matcher.getNode(name).value() + "-" + matcher.getNode(name).index());
+            log.info("  " + name + ": " + matcher.getNode(name).value() + "-" + matcher.getNode(name).index());
           }
-          System.err.println();
+          log.info();
           found = matcher.find();
         }
       } else if (outputFormat == OutputFormat.OFFSET) {

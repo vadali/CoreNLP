@@ -28,10 +28,11 @@
 
 package edu.stanford.nlp.parser.lexparser;
 
+import edu.stanford.nlp.ling.CoreAnnotations;
+import edu.stanford.nlp.ling.SentenceUtils;
 import junit.framework.TestCase;
 
 import edu.stanford.nlp.ling.CoreLabel;
-import edu.stanford.nlp.ling.Sentence;
 import edu.stanford.nlp.parser.common.ParserAnnotations;
 import edu.stanford.nlp.parser.common.ParserConstraint;
 import edu.stanford.nlp.parser.common.ParserQuery;
@@ -181,11 +182,11 @@ public class LexicalizedParserITest extends TestCase {
 
   public void testParseMultiple() {
     List<List<CoreLabel>> sentences = new ArrayList<List<CoreLabel>>();
-    sentences.add(Sentence.toCoreLabelList("The", "Flyers", "lost", "again", "last", "night", "."));
-    sentences.add(Sentence.toCoreLabelList("If", "this", "continues", ",", "they", "will", "miss", "the", "playoffs", "."));
-    sentences.add(Sentence.toCoreLabelList("Hopefully", "they", "can", "turn", "it", "around", "."));
-    sentences.add(Sentence.toCoreLabelList("Winning", "on", "Wednesday", "would", "be", "a", "good", "first", "step", "."));
-    sentences.add(Sentence.toCoreLabelList("Their", "next", "opponent", "is", "quite", "bad", "."));
+    sentences.add(SentenceUtils.toCoreLabelList("The", "Flyers", "lost", "again", "last", "night", "."));
+    sentences.add(SentenceUtils.toCoreLabelList("If", "this", "continues", ",", "they", "will", "miss", "the", "playoffs", "."));
+    sentences.add(SentenceUtils.toCoreLabelList("Hopefully", "they", "can", "turn", "it", "around", "."));
+    sentences.add(SentenceUtils.toCoreLabelList("Winning", "on", "Wednesday", "would", "be", "a", "good", "first", "step", "."));
+    sentences.add(SentenceUtils.toCoreLabelList("Their", "next", "opponent", "is", "quite", "bad", "."));
 
     List<Tree> results1 = englishParser.parseMultiple(sentences);
     List<Tree> results2 = englishParser.parseMultiple(sentences, 3);
@@ -240,7 +241,7 @@ public class LexicalizedParserITest extends TestCase {
   private static final String expectedChineseTree2 = "(ROOT (IP (NP (PN 这里)) (VP (VC 是) (NP (DNP (NP (NN 新闻)) (DEG 之)) (NP (NN 夜)))) (PU ．)))";
   private static final String expectedChineseDeps2 = "nsubj(夜-5, 这里-1) cop(夜-5, 是-2) assmod(夜-5, 新闻-3) case(新闻-3, 之-4) root(ROOT-0, 夜-5)";
 
-  public static void testChineseDependenciesSemanticHead() {
+  public void testChineseDependenciesSemanticHead() {
     Tree tree = chineseParser.parse(chineseTest2);
     compareSingleOutput(tree, false, chinesePennPrint, expectedChineseTree2);
     compareSingleOutput(tree, false, chineseTypDepPrint, expectedChineseDeps2);
@@ -248,8 +249,8 @@ public class LexicalizedParserITest extends TestCase {
     compareSingleOutput(tree, false, paramsTreePrint, expectedChineseDeps2);
   }
 
-  public static void testAlreadyTagged() {
-    List<CoreLabel> words = Sentence.toCoreLabelList("foo", "bar", "baz");
+  public void testAlreadyTagged() {
+    List<CoreLabel> words = SentenceUtils.toCoreLabelList("foo", "bar", "baz");
     words.get(1).setTag("JJ");
     Tree tree = englishParser.parse(words);
     assertEquals("JJ", tree.taggedYield().get(1).tag());
@@ -259,8 +260,8 @@ public class LexicalizedParserITest extends TestCase {
     assertEquals("NN", tree.taggedYield().get(1).tag());
   }
 
-  public static void testTagRegex() {
-    List<CoreLabel> words = Sentence.toCoreLabelList("foo", "bar", "baz");
+  public void testTagRegex() {
+    List<CoreLabel> words = SentenceUtils.toCoreLabelList("foo", "bar", "baz");
     words.get(1).set(ParserAnnotations.CandidatePartOfSpeechAnnotation.class, "JJ");
     Tree tree = englishParser.parse(words);
     assertEquals("JJ", tree.taggedYield().get(1).tag());
@@ -268,7 +269,31 @@ public class LexicalizedParserITest extends TestCase {
     words.get(1).set(ParserAnnotations.CandidatePartOfSpeechAnnotation.class, "NN|NNP");
     tree = englishParser.parse(words);
     assertTrue(tree.taggedYield().get(1).tag().equals("NN") ||
-               tree.taggedYield().get(1).tag().equals("NNP"));
+            tree.taggedYield().get(1).tag().equals("NNP"));
   }
+
+  public void testCharOffsets() {
+    String text = "  You can  eat fruits   such as apples and   oranges.";
+    String[] tokens = { "You", "can", "eat", "fruits", "such", "as", "apples", "and", "oranges", "." };
+    int[] begins = { 2, 6, 11, 15, 24, 29, 32, 39, 45, 52 };
+    int[] ends = { 5, 9, 14, 21, 28, 31, 38, 42, 52, 53 };
+
+
+    Tree tree = englishParser.parse(text);
+
+    List<CoreLabel> yield = tree.yield(new ArrayList<CoreLabel>());
+
+    assertEquals("Wrong number of tokens in parser output", tokens.length, yield.size());
+
+    int i = 0;
+    for (CoreLabel cl : yield) {
+      assertEquals("Wrong token", tokens[i], cl.word());
+      assertEquals("Wrong char begin", begins[i], (int) cl.get(CoreAnnotations.CharacterOffsetBeginAnnotation.class));
+      assertEquals("Wrong char end", ends[i], (int) cl.get(CoreAnnotations.CharacterOffsetEndAnnotation.class));
+      i++;
+    }
+  }
+
+
 }
 

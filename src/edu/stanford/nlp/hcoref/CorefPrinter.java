@@ -49,7 +49,10 @@ import edu.stanford.nlp.util.Generics;
 import edu.stanford.nlp.util.StringUtils;
 import edu.stanford.nlp.util.logging.Redwood;
 
-public class CorefPrinter {
+public class CorefPrinter  {
+
+  /** A logger for this class */
+  private static Redwood.RedwoodChannels log = Redwood.channels(CorefPrinter.class);
 
   public static final DecimalFormat df = new DecimalFormat("#.####");
   
@@ -207,8 +210,8 @@ public class CorefPrinter {
 //      sentStr.append("\n");
 //    }
     previousOffset = t.get(t.size()-1).get(CoreAnnotations.CharacterOffsetEndAnnotation.class);
-    Counter<Integer> startCounts = new ClassicCounter<Integer>();
-    Counter<Integer> endCounts = new ClassicCounter<Integer>();
+    Counter<Integer> startCounts = new ClassicCounter<>();
+    Counter<Integer> endCounts = new ClassicCounter<>();
     Map<Integer, Deque<Mention>> endMentions = Generics.newHashMap();
     for (Mention m : mentions) {
 //      if(!gold && (document.corefClusters.get(m.corefClusterID)==null || document.corefClusters.get(m.corefClusterID).getCorefMentions().size()<=1)) {
@@ -216,7 +219,7 @@ public class CorefPrinter {
 //      }
       startCounts.incrementCount(m.startIndex);
       endCounts.incrementCount(m.endIndex);
-      if(!endMentions.containsKey(m.endIndex)) endMentions.put(m.endIndex, new ArrayDeque<Mention>());
+      if(!endMentions.containsKey(m.endIndex)) endMentions.put(m.endIndex, new ArrayDeque<>());
       endMentions.get(m.endIndex).push(m);
     }
     for (int j = 0 ; j < tokens.length; j++){
@@ -279,9 +282,9 @@ public class CorefPrinter {
       Map<Integer,Set<Mention>> mentionBeginEnd = Generics.newHashMap();
 
       for(int i=0 ; i<sentence.size(); i++){
-        mentionBeginOnly.put(i, new LinkedHashSet<Mention>());
-        mentionEndOnly.put(i, new LinkedHashSet<Mention>());
-        mentionBeginEnd.put(i, new LinkedHashSet<Mention>());
+        mentionBeginOnly.put(i, new LinkedHashSet<>());
+        mentionEndOnly.put(i, new LinkedHashSet<>());
+        mentionBeginEnd.put(i, new LinkedHashSet<>());
       }
 
       for(Mention m : orderedMentions.get(sentNum)) {
@@ -516,7 +519,7 @@ public class CorefPrinter {
     System.out.println("LIST -------------------------------------------");
     Counters.printCounterSortedByKeys(list);
     
-    System.err.println();
+    log.info();
 
   }
   

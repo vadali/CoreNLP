@@ -24,7 +24,8 @@
 //    USA
 //
 
-package edu.stanford.nlp.hcoref.sieve;
+package edu.stanford.nlp.hcoref.sieve; 
+import edu.stanford.nlp.util.logging.Redwood;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -57,7 +58,10 @@ import edu.stanford.nlp.util.PropertiesUtils;
  *  @author heeyoung
  *  @author mihais
  */
-public abstract class DeterministicCorefSieve extends Sieve {
+public abstract class DeterministicCorefSieve extends Sieve  {
+
+  /** A logger for this class */
+  private static Redwood.RedwoodChannels log = Redwood.channels(DeterministicCorefSieve.class);
 
   public final DcorefSieveOptions flags;
 
@@ -94,7 +98,7 @@ public abstract class DeterministicCorefSieve extends Sieve {
               l.get(i).sameSentence(l.get(j)) && j > i &&
               l.get(i).spanToString().length() > l.get(j).spanToString().length()) {
             l.set(j, l.set(i, l.get(j)));
-//              System.err.println("antecedent ordering changed!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+//              log.info("antecedent ordering changed!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
           }
         }
       }
@@ -481,7 +485,7 @@ public abstract class DeterministicCorefSieve extends Sieve {
       if (mention2.headWord == ant.headWord && mention2.insideIn(ant)) {
         if(!document.isCoref(mention2, ant)) {
           // TODO: exclude conjunction
-          System.err.println("error in chinese head match: "+mention2.spanToString()+"\t"+ant.spanToString());
+          log.info("error in chinese head match: "+mention2.spanToString()+"\t"+ant.spanToString());
         }
         return true;
       }
@@ -511,7 +515,7 @@ public abstract class DeterministicCorefSieve extends Sieve {
       int m1Position,
       Map<Integer, CorefCluster> corefClusters,
       Dictionaries dict) {
-    List<Mention> orderedAntecedents = new ArrayList<Mention>();
+    List<Mention> orderedAntecedents = new ArrayList<>();
 
     // ordering antecedents
     if (antecedentSentence == mySentence) {   // same sentence
@@ -529,7 +533,7 @@ public abstract class DeterministicCorefSieve extends Sieve {
 
   /** Divides a sentence into clauses and sort the antecedents for pronoun matching  */
   private static List<Mention> sortMentionsForPronoun(List<Mention> l, Mention m1) {
-    List<Mention> sorted = new ArrayList<Mention>();
+    List<Mention> sorted = new ArrayList<>();
     Tree tree = m1.contextParseTree;
     Tree current = m1.mentionSubTree;
     if(tree==null || current==null) return l;

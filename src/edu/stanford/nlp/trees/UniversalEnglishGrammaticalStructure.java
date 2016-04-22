@@ -1,4 +1,5 @@
-package edu.stanford.nlp.trees;
+package edu.stanford.nlp.trees; 
+import edu.stanford.nlp.util.logging.Redwood;
 
 import java.io.*;
 import java.util.*;
@@ -29,7 +30,10 @@ import static edu.stanford.nlp.trees.GrammaticalRelation.*;
  * @author John Bauer
  * @author Sebastian Schuster
  */
-public class UniversalEnglishGrammaticalStructure extends GrammaticalStructure {
+public class UniversalEnglishGrammaticalStructure extends GrammaticalStructure  {
+
+  /** A logger for this class */
+  private static Redwood.RedwoodChannels log = Redwood.channels(UniversalEnglishGrammaticalStructure.class);
 
   private static final long serialVersionUID = 1L;
 
@@ -72,12 +76,12 @@ public class UniversalEnglishGrammaticalStructure extends GrammaticalStructure {
   }
 
   /**
-   * Construct a new <code>GrammaticalStructure</code> from an existing parse
-   * tree. The new <code>GrammaticalStructure</code> has the same tree structure
+   * Construct a new {@code GrammaticalStructure} from an existing parse
+   * tree. The new {@code GrammaticalStructure} has the same tree structure
    * and label values as the given tree (but no shared storage). As part of
    * construction, the parse tree is analyzed using definitions from
    * {@link GrammaticalRelation <code>GrammaticalRelation</code>} to populate
-   * the new <code>GrammaticalStructure</code> with as many labeled grammatical
+   * the new {@code GrammaticalStructure} with as many labeled grammatical
    * relations as it can.
    *
    * @param t Parse tree to make grammatical structure from
@@ -89,8 +93,8 @@ public class UniversalEnglishGrammaticalStructure extends GrammaticalStructure {
   public UniversalEnglishGrammaticalStructure(Tree t, Predicate<String> tagFilter, HeadFinder hf, boolean threadSafe) {
 
     // the tree is normalized (for index and functional tag stripping) inside CoordinationTransformer
-    super(t, UniversalEnglishGrammaticalRelations.values(threadSafe), threadSafe ? UniversalEnglishGrammaticalRelations.valuesLock() : null,
-          new CoordinationTransformer(hf, true), hf, Filters.acceptFilter(), tagFilter);
+    super(t, UniversalEnglishGrammaticalRelations.values(), UniversalEnglishGrammaticalRelations.valuesLock(),
+            new CoordinationTransformer(hf, true), hf, Filters.acceptFilter(), tagFilter);
   }
 
   /** Used for postprocessing CoNLL X dependencies */
@@ -156,12 +160,12 @@ public class UniversalEnglishGrammaticalStructure extends GrammaticalStructure {
   }
 
   private static void printListSorted(String title, Collection<TypedDependency> list) {
-    List<TypedDependency> lis = new ArrayList<TypedDependency>(list);
+    List<TypedDependency> lis = new ArrayList<>(list);
     Collections.sort(lis);
     if (title != null) {
-      System.err.println(title);
+      log.info(title);
     }
-    System.err.println(lis);
+    log.info(lis);
   }
 
   @Override
@@ -949,7 +953,7 @@ public class UniversalEnglishGrammaticalStructure extends GrammaticalStructure {
       if (!map.containsKey(edge.getDependent())) {
         // NB: Here and in other places below, we use a TreeSet (which extends
         // SortedSet) to guarantee that results are deterministic)
-        map.put(edge.getDependent(), new TreeSet<SemanticGraphEdge>());
+        map.put(edge.getDependent(), new TreeSet<>());
       }
       map.get(edge.getDependent()).add(edge);
 
@@ -987,10 +991,10 @@ public class UniversalEnglishGrammaticalStructure extends GrammaticalStructure {
       }
     }
 
-    // System.err.println(map);
-    // if (DEBUG) System.err.println("Subject map: " + subjectMap);
-    // if (DEBUG) System.err.println("Object map: " + objectMap);
-    // System.err.println(rcmodHeads);
+    // log.info(map);
+    // if (DEBUG) log.info("Subject map: " + subjectMap);
+    // if (DEBUG) log.info("Object map: " + objectMap);
+    // log.info(rcmodHeads);
 
     // create a new list of typed dependencies
     //Collection<TypedDependency> newTypedDeps = new ArrayList<TypedDependency>(list);
@@ -1005,10 +1009,10 @@ public class UniversalEnglishGrammaticalStructure extends GrammaticalStructure {
 
         // look at the dep in the conjunct
         Set<SemanticGraphEdge> gov_relations = map.get(gov);
-        // System.err.println("gov " + gov);
+        // log.info("gov " + gov);
         if (gov_relations != null) {
           for (SemanticGraphEdge edge1 : gov_relations) {
-            // System.err.println("gov rel " + td1);
+            // log.info("gov rel " + td1);
             IndexedWord newGov = edge1.getGovernor();
             // in the case of errors in the basic dependencies, it
             // is possible to have overlapping newGov & dep
@@ -1023,13 +1027,13 @@ public class UniversalEnglishGrammaticalStructure extends GrammaticalStructure {
                 // to prevent wrong propagation in the case of long dependencies in relative clauses
                 if (newRel != DIRECT_OBJECT && newRel != NOMINAL_SUBJECT) {
                   if (DEBUG) {
-                    System.err.println("Adding new " + newRel + " dependency from " + newGov + " to " + dep + " (subj/obj case)");
+                    log.info("Adding new " + newRel + " dependency from " + newGov + " to " + dep + " (subj/obj case)");
                   }
                   sg.addEdge(newGov, dep, newRel, Double.NEGATIVE_INFINITY, true);
                 }
               } else {
                 if (DEBUG) {
-                  System.err.println("Adding new " + newRel + " dependency from " + newGov + " to " + dep);
+                  log.info("Adding new " + newRel + " dependency from " + newGov + " to " + dep);
                 }
                 sg.addEdge(newGov, dep, newRel, Double.NEGATIVE_INFINITY, true);
               }
@@ -1071,7 +1075,7 @@ public class UniversalEnglishGrammaticalStructure extends GrammaticalStructure {
             }
           }
           if (DEBUG) {
-            System.err.println("Adding new " + relation + " dependency from " + dep + " to " + tdsubj.getDependent() + " (subj propagation case)");
+            log.info("Adding new " + relation + " dependency from " + dep + " to " + tdsubj.getDependent() + " (subj propagation case)");
           }
           sg.addEdge(dep, tdsubj.getDependent(), relation, Double.NEGATIVE_INFINITY, true);
         }
@@ -1090,7 +1094,7 @@ public class UniversalEnglishGrammaticalStructure extends GrammaticalStructure {
         // && ! prepcDep.contains(gov)) {
         // TypedDependency tdobj = objectMap.get(gov);
         // if (DEBUG) {
-        // System.err.println("Adding new " + tdobj.reln() + " dependency from "
+        // log.info("Adding new " + tdobj.reln() + " dependency from "
         // + dep + " to " + tdobj.dep() + " (obj propagation case)");
         // }
         // newTypedDeps.add(new TypedDependency(tdobj.reln(), dep,
@@ -1114,7 +1118,7 @@ public class UniversalEnglishGrammaticalStructure extends GrammaticalStructure {
   private static void collapseReferent(SemanticGraph sg) {
     // find typed deps of form ref(gov, dep)
     // put them in a List for processing
-    List<SemanticGraphEdge> refs = new ArrayList<SemanticGraphEdge>(sg.findAllRelns(REFERENT));
+    List<SemanticGraphEdge> refs = new ArrayList<>(sg.findAllRelns(REFERENT));
 
     SemanticGraph sgCopy = sg.makeSoftCopy();
 
@@ -1336,8 +1340,8 @@ public class UniversalEnglishGrammaticalStructure extends GrammaticalStructure {
     if (sg.getRoots().isEmpty())
       return;
 
-    HashMap<String, HashSet<Integer>> bigrams = new HashMap<String, HashSet<Integer>>();
-    HashMap<String, HashSet<Integer>> trigrams = new HashMap<String, HashSet<Integer>>();
+    HashMap<String, HashSet<Integer>> bigrams = new HashMap<>();
+    HashMap<String, HashSet<Integer>> trigrams = new HashMap<>();
 
 
     List<IndexedWord> vertexList = sg.vertexListSorted();
@@ -1347,7 +1351,7 @@ public class UniversalEnglishGrammaticalStructure extends GrammaticalStructure {
       String bigram = vertexList.get(i-1).value().toLowerCase() + "_" + vertexList.get(i).value().toLowerCase();
 
       if (bigrams.get(bigram) == null) {
-        bigrams.put(bigram, new HashSet<Integer>());
+        bigrams.put(bigram, new HashSet<>());
       }
 
       bigrams.get(bigram).add(vertexList.get(i-1).index());
@@ -1356,7 +1360,7 @@ public class UniversalEnglishGrammaticalStructure extends GrammaticalStructure {
         String trigram = vertexList.get(i-2).value().toLowerCase() + "_" + bigram;
 
         if (trigrams.get(trigram) == null) {
-          trigrams.put(trigram, new HashSet<Integer>());
+          trigrams.put(trigram, new HashSet<>());
         }
 
         trigrams.get(trigram).add(vertexList.get(i-2).index());

@@ -7,6 +7,7 @@ import edu.stanford.nlp.ling.CoreLabel;
 import edu.stanford.nlp.ling.HasOffset;
 import edu.stanford.nlp.ling.HasWord;
 import edu.stanford.nlp.math.SloppyMath;
+import edu.stanford.nlp.util.logging.Redwood;
 
 import java.io.*;
 import java.lang.reflect.Field;
@@ -47,7 +48,10 @@ import java.util.stream.Stream;
  * @author Chris Cox
  * @version 2006/02/03
  */
-public class StringUtils {
+public class StringUtils  {
+
+  /** A logger for this class */
+  private static final Redwood.RedwoodChannels log = Redwood.channels(StringUtils.class);
 
   /**
    * Don't let anyone instantiate this class.
@@ -155,7 +159,7 @@ public class StringUtils {
 
   public static List<Pattern> regexesToPatterns(Iterable<String> regexes)
   {
-    List<Pattern> patterns = new ArrayList<Pattern>();
+    List<Pattern> patterns = new ArrayList<>();
     for (String regex:regexes) {
       patterns.add(Pattern.compile(regex));
     }
@@ -178,7 +182,7 @@ public class StringUtils {
       return null;
     }
 
-    List<String> groups = new ArrayList<String>();
+    List<String> groups = new ArrayList<>();
     for (int index = 1; index <= matcher.groupCount(); index++) {
       groups.add(matcher.group(index));
     }
@@ -471,6 +475,13 @@ public class StringUtils {
     return (Arrays.asList(str.split(regex)));
   }
 
+  /**
+   * Split a string on a given single character.
+   * This method is often faster than the regular split() method.
+   * @param input The input to split.
+   * @param delimiter The character to split on.
+   * @return An array of Strings corresponding to the original input split on the delimiter character.
+   */
   public static String[] splitOnChar(String input, char delimiter) {
     // State
     String[] out = new String[input.length() + 1];
@@ -521,6 +532,30 @@ public class StringUtils {
     return fields;
   }
 
+
+  /**
+   * Split on a given character, filling out the fields in the output array.
+   * This is suitable for, e.g., splitting a TSV file of known column count.
+   * @param out The output array to fill
+   * @param input The input to split
+   * @param delimiter The delimiter to split on.
+   */
+  public static void splitOnChar(String[] out, String input, char delimiter) {
+    int lastSplit = 0;
+    int outI = 0;
+    char[] chars = input.toCharArray();
+    for (int i = 0; i < chars.length; ++i) {
+      if (chars[i] == delimiter) {
+        out[outI] = new String(chars, lastSplit, i - lastSplit);
+        outI += 1;
+        lastSplit = i + 1;
+      }
+    }
+    if (outI < out.length) {
+      out[outI] = input.substring(lastSplit);
+    }
+  }
+
   /** Split a string into tokens.  Because there is a tokenRegex as well as a
    *  separatorRegex (unlike for the conventional split), you can do things
    *  like correctly split quoted strings or parenthesized arguments.
@@ -542,14 +577,14 @@ public class StringUtils {
   public static List<String> valueSplit(String str, String valueRegex, String separatorRegex) {
     Pattern vPat = Pattern.compile(valueRegex);
     Pattern sPat = Pattern.compile(separatorRegex);
-    List<String> ret = new ArrayList<String>();
+    List<String> ret = new ArrayList<>();
     while (str.length() > 0) {
       Matcher vm = vPat.matcher(str);
       if (vm.lookingAt()) {
         ret.add(vm.group());
         str = str.substring(vm.end());
         // String got = vm.group();
-        // System.err.println("vmatched " + got + "; now str is " + str);
+        // log.info("vmatched " + got + "; now str is " + str);
       } else {
         throw new IllegalArgumentException("valueSplit: " + valueRegex + " doesn't match " + str);
       }
@@ -558,7 +593,7 @@ public class StringUtils {
         if (sm.lookingAt()) {
           str = str.substring(sm.end());
           // String got = sm.group();
-          // System.err.println("smatched " + got + "; now str is " + str);
+          // log.info("smatched " + got + "; now str is " + str);
         } else {
           throw new IllegalArgumentException("valueSplit: " + separatorRegex + " doesn't match " + str);
         }
@@ -842,14 +877,14 @@ public class StringUtils {
    */
   public static Map<String, String[]> argsToMap(String[] args, Map<String, Integer> flagsToNumArgs) {
     Map<String, String[]> result = Generics.newHashMap();
-    List<String> remainingArgs = new ArrayList<String>();
+    List<String> remainingArgs = new ArrayList<>();
     for (int i = 0; i < args.length; i++) {
       String key = args[i];
       if (key.charAt(0) == '-') { // found a flag
         Integer numFlagArgs = flagsToNumArgs.get(key);
         int max = numFlagArgs == null ? 1 : numFlagArgs.intValue();
         int min = numFlagArgs == null ? 0 : numFlagArgs.intValue();
-        List<String> flagArgs = new ArrayList<String>();
+        List<String> flagArgs = new ArrayList<>();
         for (int j = 0; j < max && i + 1 < args.length && (j < min || args[i + 1].length() == 0 || args[i + 1].charAt(0) != '-'); i++, j++) {
           flagArgs.add(args[i + 1]);
         }
@@ -905,7 +940,7 @@ public class StringUtils {
    */
   public static Properties argsToProperties(String[] args, Map<String,Integer> flagsToNumArgs) {
     Properties result = new Properties();
-    List<String> remainingArgs = new ArrayList<String>();
+    List<String> remainingArgs = new ArrayList<>();
     for (int i = 0; i < args.length; i++) {
       String key = args[i];
       if (key.length() > 0 && key.charAt(0) == '-') { // found a flag
@@ -917,7 +952,11 @@ public class StringUtils {
         Integer maxFlagArgs = flagsToNumArgs.get(key);
         int max = maxFlagArgs == null ? 1 : maxFlagArgs;
         int min = maxFlagArgs == null ? 0 : maxFlagArgs;
-        List<String> flagArgs = new ArrayList<String>();
+        if (maxFlagArgs != null && maxFlagArgs == 0 && i < args.length - 1 &&
+            ("true".equalsIgnoreCase(args[i + 1]) || "false".equalsIgnoreCase(args[i + 1]))) {
+          max = 1;  // case: we're reading a boolean flag. TODO(gabor) there's gotta be a better way...
+        }
+        List<String> flagArgs = new ArrayList<>();
         // cdm oct 2007: add length check to allow for empty string argument!
         for (int j = 0; j < max && i + 1 < args.length && (j < min || args[i + 1].isEmpty() || args[i + 1].charAt(0) != '-'); i++, j++) {
           flagArgs.add(args[i + 1]);
@@ -1047,7 +1086,7 @@ public class StringUtils {
 
   /**
    * Prints to a file.  If the file already exists, appends if
-   * <code>append=true</code>, and overwrites if <code>append=false</code>.
+   * {@code append=true}, and overwrites if {@code append=false}.
    */
   public static void printToFile(File file, String message, boolean append,
                                  boolean printLn, String encoding) {
@@ -1067,7 +1106,7 @@ public class StringUtils {
         pw.print(message);
       }
     } catch (Exception e) {
-      System.err.println("Exception: in printToFile " + file.getAbsolutePath());
+      log.info("Exception: in printToFile " + file.getAbsolutePath());
       e.printStackTrace();
     } finally {
       if (pw != null) {
@@ -1080,7 +1119,7 @@ public class StringUtils {
 
   /**
    * Prints to a file.  If the file already exists, appends if
-   * <code>append=true</code>, and overwrites if <code>append=false</code>.
+   * {@code append=true}, and overwrites if {@code append=false}.
    */
   public static void printToFileLn(File file, String message, boolean append) {
     PrintWriter pw = null;
@@ -1089,7 +1128,7 @@ public class StringUtils {
       pw = new PrintWriter(fw);
       pw.println(message);
     } catch (Exception e) {
-      System.err.println("Exception: in printToFileLn " + file.getAbsolutePath() + ' ' + message);
+      log.info("Exception: in printToFileLn " + file.getAbsolutePath() + ' ' + message);
       e.printStackTrace();
     } finally {
       if (pw != null) {
@@ -1101,7 +1140,7 @@ public class StringUtils {
 
   /**
    * Prints to a file.  If the file already exists, appends if
-   * <code>append=true</code>, and overwrites if <code>append=false</code>.
+   * {@code append=true}, and overwrites if {@code append=false}.
    */
   public static void printToFile(File file, String message, boolean append) {
     PrintWriter pw = null;
@@ -1110,13 +1149,9 @@ public class StringUtils {
       pw = new PrintWriter(fw);
       pw.print(message);
     } catch (Exception e) {
-      System.err.println("Exception: in printToFile " + file.getAbsolutePath());
-      e.printStackTrace();
+      throw new RuntimeIOException("Exception in printToFile " + file.getAbsolutePath(), e);
     } finally {
-      if (pw != null) {
-        pw.flush();
-        pw.close();
-      }
+      IOUtils.closeIgnoringExceptions(pw);
     }
   }
 
@@ -1131,7 +1166,7 @@ public class StringUtils {
 
   /**
    * Prints to a file.  If the file already exists, appends if
-   * <code>append=true</code>, and overwrites if <code>append=false</code>
+   * {@code append=true}, and overwrites if {@code append=false}.
    */
   public static void printToFile(String filename, String message, boolean append) {
     printToFile(new File(filename), message, append);
@@ -1139,7 +1174,7 @@ public class StringUtils {
 
   /**
    * Prints to a file.  If the file already exists, appends if
-   * <code>append=true</code>, and overwrites if <code>append=false</code>
+   * {@code append=true}, and overwrites if {@code append=false}.
    */
   public static void printToFileLn(String filename, String message, boolean append) {
     printToFileLn(new File(filename), message, append);
@@ -1274,7 +1309,7 @@ public class StringUtils {
    * @return An array of Strings that s is split into
    */
   public static String[] splitOnCharWithQuoting(String s, char splitChar, char quoteChar, char escapeChar) {
-    List<String> result = new ArrayList<String>();
+    List<String> result = new ArrayList<>();
     int i = 0;
     int length = s.length();
     StringBuilder b = new StringBuilder();
@@ -1370,18 +1405,18 @@ public class StringUtils {
       // num chars needed to display longest num
       int numChars = (int) Math.ceil(Math.log(d[n][m]) / Math.log(10));
       for (i = 0; i < numChars + 3; i++) {
-        System.err.print(' ');
+        log.info(' ');
       }
       for (j = 0; j < m; j++) {
-        System.err.print(t.charAt(j) + " ");
+        log.info(t.charAt(j) + " ");
       }
-      System.err.println();
+      log.info();
       for (i = 0; i <= n; i++) {
-        System.err.print((i == 0 ? ' ' : s.charAt(i - 1)) + " ");
+        log.info((i == 0 ? ' ' : s.charAt(i - 1)) + " ");
         for (j = 0; j <= m; j++) {
-          System.err.print(d[i][j] + " ");
+          log.info(d[i][j] + " ");
         }
-        System.err.println();
+        log.info();
       }
     ---- */
     // Step 7
@@ -1422,7 +1457,7 @@ public class StringUtils {
         }
       }
     }
-    // System.err.println("LCCS(" + s + "," + t + ") = " + max);
+    // log.info("LCCS(" + s + "," + t + ") = " + max);
     return max;
   }
 
@@ -1852,25 +1887,10 @@ public class StringUtils {
   }
 
 
-  public static void printErrInvocationString(String cls, String[] args) {
-    System.err.println(toInvocationString(cls, args));
-  }
-
-
-  public static String toInvocationString(String cls, String[] args) {
-    StringBuilder sb = new StringBuilder();
-    sb.append(cls).append(" invoked on ").append(new Date());
-    sb.append(" with arguments:\n  ");
-    for (String arg : args) {
-      sb.append(' ').append(arg);
-    }
-    return sb.toString();
-  }
-
   /**
    * Strip directory from filename.  Like Unix 'basename'. <p/>
    *
-   * Example: <code>getBaseName("/u/wcmac/foo.txt") ==> "foo.txt"</code>
+   * Example: {@code getBaseName("/u/wcmac/foo.txt") ==> "foo.txt"}
    */
   public static String getBaseName(String fileName) {
     return getBaseName(fileName, "");
@@ -1995,8 +2015,8 @@ public class StringUtils {
    * variables. if the variable is not found then substitute it for empty string
    */
   public static Properties argsToPropertiesWithResolve(String[] args) {
-    LinkedHashMap<String, String> result = new LinkedHashMap<String, String>();
-    Map<String, String> existingArgs = new LinkedHashMap<String, String>();
+    LinkedHashMap<String, String> result = new LinkedHashMap<>();
+    Map<String, String> existingArgs = new LinkedHashMap<>();
 
     for (int i = 0; i < args.length; i++) {
       String key = args[i];
@@ -2008,7 +2028,7 @@ public class StringUtils {
 
         int max = 1;
         int min = 0;
-        List<String> flagArgs = new ArrayList<String>();
+        List<String> flagArgs = new ArrayList<>();
         // cdm oct 2007: add length check to allow for empty string argument!
         for (int j = 0; j < max && i + 1 < args.length && (j < min || args[i + 1].length() == 0 || args[i + 1].charAt(0) != '-'); i++, j++) {
           flagArgs.add(args[i + 1]);
@@ -2050,7 +2070,7 @@ public class StringUtils {
    */
   public static LinkedHashMap<String, String> propFileToLinkedHashMap(String filename, Map<String, String> existingArgs) {
 
-    LinkedHashMap<String, String> result = new LinkedHashMap<String, String>();
+    LinkedHashMap<String, String> result = new LinkedHashMap<>();
     result.putAll(existingArgs);
     for (String l : IOUtils.readLines(filename)) {
       l = l.trim();
@@ -2071,7 +2091,7 @@ public class StringUtils {
    */
   public static Collection<String> getNgrams(List<String> words, int minSize, int maxSize){
     List<List<String>> ng = CollectionUtils.getNGrams(words, minSize, maxSize);
-    Collection<String> ngrams = new ArrayList<String>();
+    Collection<String> ngrams = new ArrayList<>();
     for(List<String> n: ng)
       ngrams.add(StringUtils.join(n," "));
 
@@ -2082,11 +2102,11 @@ public class StringUtils {
    * n grams for already splitted string. the ngrams are joined with a single space
    */
   public static Collection<String> getNgramsFromTokens(List<CoreLabel> words, int minSize, int maxSize){
-    List<String> wordsStr = new ArrayList<String>();
+    List<String> wordsStr = new ArrayList<>();
     for(CoreLabel l : words)
       wordsStr.add(l.word());
     List<List<String>> ng = CollectionUtils.getNGrams(wordsStr, minSize, maxSize);
-    Collection<String> ngrams = new ArrayList<String>();
+    Collection<String> ngrams = new ArrayList<>();
     for(List<String> n: ng)
       ngrams.add(StringUtils.join(n," "));
 
@@ -2104,7 +2124,7 @@ public class StringUtils {
    * Build a list of character-based ngrams from the given string.
    */
   public static Collection<String> getCharacterNgrams(String s, int minSize, int maxSize) {
-    Collection<String> ngrams = new ArrayList<String>();
+    Collection<String> ngrams = new ArrayList<>();
     int len = s.length();
 
     for (int i = 0; i < len; i++) {
@@ -2401,8 +2421,225 @@ public class StringUtils {
 
   private static final HashMap<String, CharSequence> htmlUnescapeLookupMap;
     static {
-        htmlUnescapeLookupMap = new HashMap<String, CharSequence>();
+        htmlUnescapeLookupMap = new HashMap<>();
         for (final CharSequence[] seq : HTML_ESCAPES)
             htmlUnescapeLookupMap.put(seq[1].toString(), seq[0]);
     }
+
+  /**
+   * Decode an array encoded as a String. This entails a comma separated value enclosed in brackets
+   * or parentheses
+   * @param encoded The String encoded array
+   * @return A String array corresponding to the encoded array
+   */
+  public static String[] decodeArray(String encoded){
+    if (encoded.length() == 0) return new String[]{};
+    char[] chars = encoded.trim().toCharArray();
+
+    //--Parse the String
+    //(state)
+    char quoteCloseChar = (char) 0;
+    List<StringBuilder> terms = new LinkedList<>();
+    StringBuilder current = new StringBuilder();
+    //(start/stop overhead)
+    int start = 0; int end = chars.length;
+    if(chars[0] == '('){ start += 1; end -= 1; if(chars[end] != ')') throw new IllegalArgumentException("Unclosed paren in encoded array: " + encoded); }
+    if(chars[0] == '['){ start += 1; end -= 1; if(chars[end] != ']') throw new IllegalArgumentException("Unclosed bracket in encoded array: " + encoded); }
+    if(chars[0] == '{'){ start += 1; end -= 1; if(chars[end] != '}') throw new IllegalArgumentException("Unclosed bracket in encoded array: " + encoded); }
+    //(finite state automata)
+    for(int i=start; i<end; i++){
+      if (chars[i] == '\r') {
+        // Ignore funny windows carriage return
+        continue;
+      } else if(chars[i] == '\\'){
+        //(case: escaped character)
+        if(i == chars.length - 1) throw new IllegalArgumentException("Last character of encoded pair is escape character: " + encoded);
+        current.append(chars[i+1]);
+        i += 1;
+      } else if(quoteCloseChar != 0){
+        //(case: in quotes)
+        if(chars[i] == quoteCloseChar){
+          quoteCloseChar = (char) 0;
+        }else{
+          current.append(chars[i]);
+        }
+      }else{
+        //(case: normal)
+        if(chars[i] == '"'){
+          quoteCloseChar = '"';
+        } else if(chars[i] == '\''){
+          quoteCloseChar = '\'';
+        } else if(chars[i] == ',' || chars[i] == ';' || chars[i] == ' ' || chars[i] == '\t' || chars[i] == '\n'){
+          //break
+          if (current.length() > 0) {
+            terms.add(current);
+          }
+          current = new StringBuilder();
+        }else{
+          current.append(chars[i]);
+        }
+      }
+    }
+
+    //--Return
+    if(current.length() > 0) terms.add(current);
+    String[] rtn = new String[terms.size()];
+    int i=0;
+    for(StringBuilder b : terms){
+      rtn[i] = b.toString().trim();
+      i += 1;
+    }
+    return rtn;
+  }
+
+  /**
+   * Decode a map encoded as a string
+   * @param encoded The String encoded map
+   * @return A String map corresponding to the encoded map
+   */
+  public static Map<String, String> decodeMap(String encoded){
+    if (encoded.length() == 0) return new HashMap<>();
+    char[] chars = encoded.trim().toCharArray();
+
+    //--Parse the String
+    //(state)
+    char quoteCloseChar = (char) 0;
+    Map<String, String> map = new HashMap<>();
+    String key = "";
+    String value = "";
+    boolean onKey = true;
+    StringBuilder current = new StringBuilder();
+    //(start/stop overhead)
+    int start = 0; int end = chars.length;
+    if(chars[0] == '('){ start += 1; end -= 1; if(chars[end] != ')') throw new IllegalArgumentException("Unclosed paren in encoded map: " + encoded); }
+    if(chars[0] == '['){ start += 1; end -= 1; if(chars[end] != ']') throw new IllegalArgumentException("Unclosed bracket in encoded map: " + encoded); }
+    if(chars[0] == '{'){ start += 1; end -= 1; if(chars[end] != '}') throw new IllegalArgumentException("Unclosed bracket in encoded map: " + encoded); }
+    //(finite state automata)
+    for(int i=start; i<end; i++){
+      if (chars[i] == '\r') {
+        // Ignore funny windows carriage return
+        continue;
+      } else if(chars[i] == '\\'){
+        //(case: escaped character)
+        if(i == chars.length - 1) {
+          throw new IllegalArgumentException("Last character of encoded pair is escape character: " + encoded);
+        }
+        current.append(chars[i+1]);
+        i += 1;
+      } else if(quoteCloseChar != 0){
+        //(case: in quotes)
+        if(chars[i] == quoteCloseChar){
+          quoteCloseChar = (char) 0;
+        }else{
+          current.append(chars[i]);
+        }
+      }else{
+        //(case: normal)
+        if(chars[i] == '"'){
+          quoteCloseChar = '"';
+        } else if(chars[i] == '\''){
+          quoteCloseChar = '\'';
+        } else if (chars[i] == '\n' && current.length() == 0) {
+          current.append("");  // do nothing
+        } else if(chars[i] == ',' || chars[i] == ';' || chars[i] == '\t' || chars[i] == '\n'){
+          // case: end a value
+          if (onKey) {
+            throw new IllegalArgumentException("Encountered key without value");
+          }
+          if (current.length() > 0) {
+            value = current.toString().trim();
+          }
+          current = new StringBuilder();
+          onKey = true;
+          map.put(key, value);  // <- add value
+        } else if((chars[i] == '-' || chars[i] == '=') && (i < chars.length - 1 && chars[i + 1] == '>')) {
+          // case: end a key
+          if (!onKey) {
+            throw new IllegalArgumentException("Encountered a value without a key");
+          }
+          if (current.length() > 0) {
+            key = current.toString().trim();
+          }
+          current = new StringBuilder();
+          onKey = false;
+          i += 1; // skip '>' character
+        } else if (chars[i] == ':') {
+          // case: end a key
+          if (!onKey) {
+            throw new IllegalArgumentException("Encountered a value without a key");
+          }
+          if (current.length() > 0) {
+            key = current.toString().trim();
+          }
+          current = new StringBuilder();
+          onKey = false;
+        } else {
+          current.append(chars[i]);
+        }
+      }
+    }
+
+    //--Return
+    if(current.toString().trim().length() > 0 && !onKey) {
+      map.put(key.trim(), current.toString().trim());
+    }
+    return map;
+  }
+
+
+  /**
+   * Takes an input String, and replaces any bash-style variables (e.g., $VAR_NAME)
+   * with its actual environment variable from the passed environment specification.
+   *
+   * @param raw The raw String to replace variables in.
+   * @param env The environment specification; e.g., {@link System#getenv()}.
+   * @return The input String, but with all variables replaced.
+   */
+  public static String expandEnvironmentVariables(String raw, Map<String, String> env) {
+    String pattern = "\\$\\{?([a-zA-Z_]+[a-zA-Z0-9_]*)\\}?";
+    Pattern expr = Pattern.compile(pattern);
+    String text = raw;
+    Matcher matcher = expr.matcher(text);
+    while (matcher.find()) {
+      String envValue = env.get(matcher.group(1));
+      if (envValue == null) {
+        envValue = "";
+      } else {
+        envValue = envValue.replace("\\", "\\\\");
+      }
+      Pattern subexpr = Pattern.compile(Pattern.quote(matcher.group(0)));
+      text = subexpr.matcher(text).replaceAll(envValue);
+    }
+    return text;
+  }
+
+  /**
+   * Takes an input String, and replaces any bash-style variables (e.g., $VAR_NAME)
+   * with its actual environment variable from {@link System#getenv()}.
+   *
+   * @param raw The raw String to replace variables in.
+   * @return The input String, but with all variables replaced.
+   */
+  public static String expandEnvironmentVariables(String raw) {
+    return expandEnvironmentVariables(raw, System.getenv());
+  }
+
+
+  /**
+   * Logs the command line arguments to Redwood on the given channels.
+   * The logger should be a RedwoodChannels of a single channel: the main class.
+   *
+   * @param logger The redwood logger to log to.
+   * @param args The command-line arguments to log.
+   */
+  public static void logInvocationString(Redwood.RedwoodChannels logger, String[] args) {
+    StringBuilder sb = new StringBuilder("Invoked on ");
+    sb.append(new Date());
+    sb.append(" with arguments:");
+    for (String arg : args) {
+      sb.append(' ').append(arg);
+    }
+    logger.info(sb.toString());
+  }
+
 }

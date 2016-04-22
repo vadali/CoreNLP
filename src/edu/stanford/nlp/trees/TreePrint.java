@@ -1,4 +1,5 @@
-package edu.stanford.nlp.trees;
+package edu.stanford.nlp.trees; 
+import edu.stanford.nlp.util.logging.Redwood;
 
 import edu.stanford.nlp.ling.*;
 import edu.stanford.nlp.process.PTBTokenizer;
@@ -22,7 +23,10 @@ import java.util.function.Predicate;
  * @author Christopher Manning
  * @author Galen Andrew
  */
-public class TreePrint {
+public class TreePrint  {
+
+  /** A logger for this class */
+  private static Redwood.RedwoodChannels log = Redwood.channels(TreePrint.class);
 
   // TODO: Add support for makeCopulaHead as an outputFormatOption here.
 
@@ -164,8 +168,8 @@ public class TreePrint {
       dependencyWordFilter = Filters.acceptFilter();
       puncFilter = Filters.acceptFilter();
     } else {
-      dependencyFilter = new Dependencies.DependentPuncTagRejectFilter<Label, Label, Object>(tlp.punctuationTagRejectFilter());
-      dependencyWordFilter = new Dependencies.DependentPuncWordRejectFilter<Label, Label, Object>(tlp.punctuationWordRejectFilter());
+      dependencyFilter = new Dependencies.DependentPuncTagRejectFilter<>(tlp.punctuationTagRejectFilter());
+      dependencyWordFilter = new Dependencies.DependentPuncWordRejectFilter<>(tlp.punctuationWordRejectFilter());
       //Universal dependencies filter punction by tags
       puncFilter = generateOriginalDependencies ? tlp.punctuationWordRejectFilter() : tlp.punctuationTagRejectFilter();
     }
@@ -363,7 +367,7 @@ public class TreePrint {
         }
         pw.println("  </words>");
       } else {
-        String sent = Sentence.listToString(outputTree.yield(), false);
+        String sent = SentenceUtils.listToString(outputTree.yield(), false);
         if(ptb2text) {
           pw.println(PTBTokenizer.ptb2Text(sent));
         } else {
@@ -382,7 +386,7 @@ public class TreePrint {
           // It's not quite clear what to do if the tree isn't unary at the top
           // but we then don't strip the ROOT symbol, since that seems closer
           // than losing part of the tree altogether....
-          System.err.println("TreePrint: can't remove top bracket: not unary");
+          log.info("TreePrint: can't remove top bracket: not unary");
         }
       }
       // Note that TreePrint is also called on dependency trees that have
@@ -472,7 +476,7 @@ public class TreePrint {
                                                  CoreLabel.factory());
         indexedTree.indexLeaves();
         Set<Dependency<Label, Label, Object>> depsSet = indexedTree.mapDependencies(dependencyWordFilter, hf);
-        List<Dependency<Label, Label, Object>> sortedDeps = new ArrayList<Dependency<Label, Label, Object>>(depsSet);
+        List<Dependency<Label, Label, Object>> sortedDeps = new ArrayList<>(depsSet);
         Collections.sort(sortedDeps, Dependencies.dependencyIndexComparator());
         pw.println("<dependencies style=\"untyped\">");
         for (Dependency<Label, Label, Object> d : sortedDeps) {
@@ -481,7 +485,7 @@ public class TreePrint {
         pw.println("</dependencies>");
       }
       if (formats.containsKey("conll2007") || formats.containsKey("conllStyleDependencies")) {
-        System.err.println("The \"conll2007\" and \"conllStyleDependencies\" formats are ignored in xml.");
+        log.info("The \"conll2007\" and \"conllStyleDependencies\" formats are ignored in xml.");
       }
       if (formats.containsKey("typedDependencies")) {
         GrammaticalStructure gs = gsf.newGrammaticalStructure(outputTree);
@@ -514,7 +518,7 @@ public class TreePrint {
     } else {
       // non-XML printing
       if (formats.containsKey("wordsAndTags")) {
-        pw.println(Sentence.listToString(outputTree.taggedYield(), false));
+        pw.println(SentenceUtils.listToString(outputTree.taggedYield(), false));
         pw.println();
       }
       if (formats.containsKey("oneline")) {
@@ -557,8 +561,7 @@ public class TreePrint {
         List<CoreLabel> tagged = it.taggedLabeledYield();
         List<Dependency<Label, Label, Object>> sortedDeps = getSortedDeps(it, Filters.<Dependency<Label, Label, Object>>acceptFilter());
 
-        for (int i = 0; i < sortedDeps.size(); i++) {
-          Dependency<Label, Label, Object> d = sortedDeps.get(i);
+        for (Dependency<Label, Label, Object> d : sortedDeps) {
           if (!dependencyFilter.test(d)) {
             continue;
           }
@@ -571,7 +574,7 @@ public class TreePrint {
           int depi = dep.index();
           int govi = gov.index();
 
-          CoreLabel w = tagged.get(depi-1);
+          CoreLabel w = tagged.get(depi - 1);
 
           // Used for both course and fine POS tag fields
           String tag = PTBTokenizer.ptbToken2Text(w.tag());
@@ -589,7 +592,7 @@ public class TreePrint {
           }
 
           // The 2007 format has 10 fields
-          pw.printf("%d\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s%n", depi,word,lemma,tag,tag,feats,govi,depRel,pHead,pDepRel);
+          pw.printf("%d\t%s\t%s\t%s\t%s\t%s\t%d\t%s\t%s\t%s%n", depi, word, lemma, tag, tag, feats, govi, depRel, pHead, pDepRel);
         }
         pw.println();
       }
@@ -615,9 +618,9 @@ public class TreePrint {
           failed = true;
         }
         if (failed) {
-          System.err.println("failed: ");
-          System.err.println(t);
-          System.err.println();
+          log.info("failed: ");
+          log.info(t);
+          log.info();
         } else {
           Map<Integer,Integer> deps = Generics.newHashMap();
           for (Dependency<Label, Label, Object> dep : depsSet) {
@@ -627,7 +630,7 @@ public class TreePrint {
               child.get(CoreAnnotations.IndexAnnotation.class);
             Integer parentIndex =
               parent.get(CoreAnnotations.IndexAnnotation.class);
-//            System.err.println(childIndex+"\t"+parentIndex);
+//            log.info(childIndex+"\t"+parentIndex);
             deps.put(childIndex, parentIndex);
           }
           boolean foundRoot = false;
@@ -688,7 +691,7 @@ public class TreePrint {
     if (gsf != null) {
       GrammaticalStructure gs = gsf.newGrammaticalStructure(tree);
       Collection<TypedDependency> deps = gs.typedDependencies(GrammaticalStructure.Extras.NONE);
-      List<Dependency<Label, Label, Object>> sortedDeps = new ArrayList<Dependency<Label, Label, Object>>();
+      List<Dependency<Label, Label, Object>> sortedDeps = new ArrayList<>();
       for (TypedDependency dep : deps) {
         sortedDeps.add(new NamedDependency(dep.gov(), dep.dep(), dep.reln().toString()));
       }
@@ -696,7 +699,7 @@ public class TreePrint {
       return sortedDeps;
     } else {
       Set<Dependency<Label, Label, Object>> depsSet = tree.mapDependencies(filter, hf, "root");
-      List<Dependency<Label, Label, Object>> sortedDeps = new ArrayList<Dependency<Label, Label, Object>>(depsSet);
+      List<Dependency<Label, Label, Object>> sortedDeps = new ArrayList<>(depsSet);
       Collections.sort(sortedDeps, Dependencies.dependencyIndexComparator());
       return sortedDeps;
     }
@@ -720,7 +723,7 @@ public class TreePrint {
         Class<?> cl = Class.forName("edu.stanford.nlp.trees.WordNetInstance");
         wnc = (WordNetConnection) cl.newInstance();
       } catch (Exception e) {
-        System.err.println("Couldn't open WordNet Connection.  Aborting collocation detection.");
+        log.info("Couldn't open WordNet Connection.  Aborting collocation detection.");
         e.printStackTrace();
         wnc = null;
       }
@@ -729,7 +732,7 @@ public class TreePrint {
       CollocationFinder cf = new CollocationFinder(tree, wnc, hf);
       tree = cf.getMangledTree();
     } else {
-      System.err.println("ERROR: WordNetConnection unavailable for collocations.");
+      log.error("WordNetConnection unavailable for collocations.");
     }
     return tree;
   }
@@ -938,7 +941,7 @@ public class TreePrint {
     CoreLabel.OutputFormat labelFormat = (includeTags) ? CoreLabel.OutputFormat.VALUE_TAG_INDEX : CoreLabel.OutputFormat.VALUE_INDEX;
     StringBuilder buf = new StringBuilder();
     if (extraSep) {
-      List<TypedDependency> extraDeps =  new ArrayList<TypedDependency>();
+      List<TypedDependency> extraDeps = new ArrayList<>();
       for (TypedDependency td : dependencies) {
         if (td.extra()) {
           extraDeps.add(td);

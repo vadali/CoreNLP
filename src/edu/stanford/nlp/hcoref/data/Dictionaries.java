@@ -1,4 +1,6 @@
-package edu.stanford.nlp.hcoref.data;
+package edu.stanford.nlp.hcoref.data; 
+import edu.stanford.nlp.util.StringUtils;
+import edu.stanford.nlp.util.logging.Redwood;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -15,7 +17,7 @@ import java.util.Set;
 import edu.stanford.nlp.hcoref.CorefProperties;
 import edu.stanford.nlp.io.IOUtils;
 import edu.stanford.nlp.io.RuntimeIOException;
-import edu.stanford.nlp.math.ArrayMath;
+import edu.stanford.nlp.neural.VectorMap;
 import edu.stanford.nlp.pipeline.DefaultPaths;
 import edu.stanford.nlp.stats.ClassicCounter;
 import edu.stanford.nlp.stats.Counter;
@@ -23,7 +25,10 @@ import edu.stanford.nlp.util.Generics;
 import edu.stanford.nlp.util.Pair;
 import edu.stanford.nlp.util.PropertiesUtils;
 
-public class Dictionaries {
+public class Dictionaries  {
+
+  /** A logger for this class */
+  private static Redwood.RedwoodChannels log = Redwood.channels(Dictionaries.class);
 
   public enum MentionType {
     PRONOMINAL(1), NOMINAL(3), PROPER(4), LIST(2);
@@ -108,8 +113,8 @@ public class Dictionaries {
 
   public final Map<List<String>, Gender> genderNumber = Generics.newHashMap();
 
-  public final ArrayList<Counter<Pair<String, String>>> corefDict = new ArrayList<Counter<Pair<String, String>>>(4);
-  public final Counter<Pair<String, String>> corefDictPMI = new ClassicCounter<Pair<String, String>>();
+  public final ArrayList<Counter<Pair<String, String>>> corefDict = new ArrayList<>(4);
+  public final Counter<Pair<String, String>> corefDictPMI = new ClassicCounter<>();
   public final Map<String,Counter<String>> NE_signatures = Generics.newHashMap();
 
   private void readWordLists(Locale lang) {
@@ -202,10 +207,10 @@ public class Dictionaries {
 
   public int dimVector;
   
-  public Map<String, float[]> vectors = Generics.newHashMap();
+  public VectorMap vectors = new VectorMap();
 
   public Map<String, String> strToEntity = Generics.newHashMap();
-  public Counter<String> dictScore = new ClassicCounter<String>();
+  public Counter<String> dictScore = new ClassicCounter<>();
   
   private void setPronouns() {
     for(String s: animatePronouns){
@@ -394,10 +399,12 @@ public class Dictionaries {
     try {
       getWordsFromFile(neutralWordsFile, neutralWords, false);
       BufferedReader reader = IOUtils.readerFromString(file);
+      String[] split = new String[2];
+      String[] countStr = new String[3];
       for (String line; (line = reader.readLine()) != null; ) {
-        String[] split = line.split("\t");
-        String[] countStr = split[1].split(" ");
-        
+        StringUtils.splitOnChar(split, line, '\t');
+        StringUtils.splitOnChar(countStr, split[1], ' ');
+
         int male = Integer.parseInt(countStr[0]);
         int female = Integer.parseInt(countStr[1]);
         int neutral = Integer.parseInt(countStr[2]);
@@ -426,10 +433,11 @@ public class Dictionaries {
     }
   }
   public void loadChineseGenderNumberAnimacy(String file) {
+    String[] split = new String[8];
     for (String line : IOUtils.readLines(file)) {
       if(line.startsWith("#WORD")) continue;    // ignore first row
-      String[] split = line.split("\t");
-      
+      StringUtils.splitOnChar(split, line, '\t');
+
       String word = split[0];
       int animate = Integer.parseInt(split[1]);
       int inanimate = Integer.parseInt(split[2]);
@@ -465,7 +473,7 @@ public class Dictionaries {
       ArrayList<Counter<Pair<String, String>>> dict) {
 
     for(int i = 0; i < 4; i++){
-      dict.add(new ClassicCounter<Pair<String, String>>());
+      dict.add(new ClassicCounter<>());
 
       BufferedReader reader = null;
       try {
@@ -475,7 +483,7 @@ public class Dictionaries {
 
         while(reader.ready()) {
           String[] split = reader.readLine().split("\t");
-          dict.get(i).setCount(new Pair<String, String>(split[0], split[1]), Double.parseDouble(split[2]));
+          dict.get(i).setCount(new Pair<>(split[0], split[1]), Double.parseDouble(split[2]));
         }
 
       } catch (IOException e) {
@@ -496,7 +504,7 @@ public class Dictionaries {
 
         while(reader.ready()) {
           String[] split = reader.readLine().split("\t");
-          dict.setCount(new Pair<String, String>(split[0], split[1]), Double.parseDouble(split[3]));
+          dict.setCount(new Pair<>(split[0], split[1]), Double.parseDouble(split[3]));
         }
 
       } catch (IOException e) {
@@ -513,7 +521,7 @@ public class Dictionaries {
 
       while(reader.ready()) {
         String[] split = reader.readLine().split("\t");
-        Counter<String> cntr = new ClassicCounter<String>();
+        Counter<String> cntr = new ClassicCounter<>();
         sigs.put(split[0], cntr);
         for (int i = 1; i < split.length; i=i+2) {
           cntr.setCount(split[i], Double.parseDouble(split[i+1]));
@@ -527,35 +535,34 @@ public class Dictionaries {
   }
   
   public void loadSemantics(Properties props) throws ClassNotFoundException, IOException {
-    System.err.println("LOADING SEMANTICS");
+    log.info("LOADING SEMANTICS");
 
 //    wordnet = new WordNet();
     
     // load word vector
     if(CorefProperties.loadWordEmbedding(props)) {
-      System.err.println("LOAD: WordVectors");
+      log.info("LOAD: WordVectors");
       String wordvectorFile = CorefProperties.getPathSerializedWordVectors(props);
-      if(new File(wordvectorFile).exists()) {
-        vectors = IOUtils.readObjectFromFile(wordvectorFile);
-        dimVector = vectors.entrySet().iterator().next().getValue().length;
-      } else {
-        for(String line : IOUtils.readLines(CorefProperties.getPathWord2Vec(props))){
-          String[] split = line.toLowerCase().split("\\s+");
-          if(split.length < 100) continue;
-          float[] vector = new float[split.length-1];
-          for(int i=1; i < split.length ; i++) {
-            vector[i-1] = Float.parseFloat(split[i]);
+      String word2vecFile = CorefProperties.getPathWord2Vec(props);
+      try {
+        // Try to read the serialized vectors
+        vectors = VectorMap.deserialize(wordvectorFile);
+      } catch (IOException e) {
+        // If that fails, try to read the vectors from the word2vec file
+        if(new File(word2vecFile).exists()) {
+          vectors = VectorMap.readWord2Vec(word2vecFile);
+          if (wordvectorFile != null && !wordvectorFile.startsWith("edu")) {
+            vectors.serialize(wordvectorFile);
           }
-          ArrayMath.L2normalize(vector);
-          vectors.put(split[0], vector);
-          dimVector = vector.length;
+        } else {
+          // If that fails, give up and crash
+          throw new RuntimeIOException(e);
         }
-        
-        if(wordvectorFile!=null) IOUtils.writeObjectToFile(vectors, wordvectorFile);
       }
+      dimVector = vectors.entrySet().iterator().next().getValue().length;
       
 //    if(Boolean.parseBoolean(props.getProperty("useValDictionary"))) {
-//      System.err.println("LOAD: ValDictionary");
+//      log.info("LOAD: ValDictionary");
 //      for(String line : IOUtils.readLines(valDict)) {
 //        String[] split = line.toLowerCase().split("\t");
 //        strToEntity.put(split[0], split[2]);
@@ -576,20 +583,20 @@ public class Dictionaries {
         props.getProperty(CorefProperties.PLURAL_PROP),
         props.getProperty(CorefProperties.SINGULAR_PROP),
         props.getProperty(CorefProperties.STATES_PROP, DefaultPaths.DEFAULT_DCOREF_STATES),
-        props.getProperty(CorefProperties.GENDER_NUMBER_PROP, DefaultPaths.DEFAULT_DCOREF_GENDER_NUMBER),
+        props.getProperty(CorefProperties.GENDER_NUMBER_PROP, CorefProperties.getGenderNumber(props)),
         props.getProperty(CorefProperties.COUNTRIES_PROP, DefaultPaths.DEFAULT_DCOREF_COUNTRIES),
         props.getProperty(CorefProperties.STATES_PROVINCES_PROP, DefaultPaths.DEFAULT_DCOREF_STATES_AND_PROVINCES),
         CorefProperties.getSieves(props).contains("CorefDictionaryMatch"),
         PropertiesUtils.getStringArray(props, CorefProperties.DICT_LIST_PROP,
-                                       new String[]{DefaultPaths.DEFAULT_DCOREF_DICT1, DefaultPaths.DEFAULT_DCOREF_DICT2,
-                                                    DefaultPaths.DEFAULT_DCOREF_DICT3, DefaultPaths.DEFAULT_DCOREF_DICT4}),
+            new String[]{DefaultPaths.DEFAULT_DCOREF_DICT1, DefaultPaths.DEFAULT_DCOREF_DICT2,
+                DefaultPaths.DEFAULT_DCOREF_DICT3, DefaultPaths.DEFAULT_DCOREF_DICT4}),
         props.getProperty(CorefProperties.DICT_PMI_PROP, DefaultPaths.DEFAULT_DCOREF_DICT1),
         props.getProperty(CorefProperties.SIGNATURES_PROP, DefaultPaths.DEFAULT_DCOREF_NE_SIGNATURES));
-    if(CorefProperties.useSemantics(props)) {
+    /*if(CorefProperties.useSemantics(props)) {
       loadSemantics(props);
     } else {
-      System.err.println("SEMANTICS NOT LOADED");
-    }
+      log.info("SEMANTICS NOT LOADED");
+    }*/
     if(props.containsKey("coref.zh.dict")) {
       loadChineseGenderNumberAnimacy(props.getProperty("coref.zh.dict"));
     }

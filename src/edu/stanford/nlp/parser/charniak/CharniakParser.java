@@ -2,7 +2,7 @@ package edu.stanford.nlp.parser.charniak;
 
 import edu.stanford.nlp.io.IOUtils;
 import edu.stanford.nlp.ling.HasWord;
-import edu.stanford.nlp.ling.Sentence;
+import edu.stanford.nlp.ling.SentenceUtils;
 import edu.stanford.nlp.trees.Tree;
 import edu.stanford.nlp.util.*;
 
@@ -124,7 +124,7 @@ public class CharniakParser {
         outFile.delete();
         errFile.delete();
       }
-      return new IterableIterator<List<ScoredObject<Tree>>>(iter.iterator());
+      return new IterableIterator<>(iter.iterator());
     } catch (IOException ex) {
       throw new RuntimeException(ex);
     }
@@ -132,7 +132,7 @@ public class CharniakParser {
 
   public void printSentence(List<? extends HasWord> sentence, String filename)
   {
-    List<List<? extends HasWord>> sentences = new ArrayList<List<? extends HasWord>>();
+    List<List<? extends HasWord>> sentences = new ArrayList<>();
     sentences.add(sentence);
     printSentences(sentences, filename);
   }
@@ -143,7 +143,7 @@ public class CharniakParser {
       PrintWriter pw = IOUtils.getPrintWriter(filename);
       for (List<? extends HasWord> sentence:sentences) {
         pw.print("<s> ");   // Note: Use <s sentence-id > to identify sentences
-        String sentString = Sentence.listToString(sentence);
+        String sentString = SentenceUtils.listToString(sentence);
         if (sentence.size() > maxSentenceLength) {
           logger.warning("Sentence length=" + sentence.size() +
                   " is longer than maximum set length " + maxSentenceLength);
@@ -167,7 +167,7 @@ public class CharniakParser {
       //  -K do not tokenize
       //  -N <N> N best parsing
       //  -T <beamsize>
-      List<String> args = new ArrayList<String>();
+      List<String> args = new ArrayList<>();
       args.add(parserExecutable);
       args.add("-l" + maxSentenceLength);
       args.add("-K");

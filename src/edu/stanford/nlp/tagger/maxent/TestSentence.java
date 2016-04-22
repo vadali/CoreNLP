@@ -5,25 +5,20 @@
  * Company:      Stanford University<p>
  */
 
-package edu.stanford.nlp.tagger.maxent;
+package edu.stanford.nlp.tagger.maxent; 
+import edu.stanford.nlp.util.logging.Redwood;
 
 import edu.stanford.nlp.io.EncodingPrintWriter;
 import edu.stanford.nlp.io.PrintFile;
-import edu.stanford.nlp.ling.HasOffset;
-import edu.stanford.nlp.ling.HasTag;
-import edu.stanford.nlp.ling.HasWord;
-import edu.stanford.nlp.ling.Sentence;
-import edu.stanford.nlp.ling.TaggedWord;
+import edu.stanford.nlp.ling.*;
+import edu.stanford.nlp.ling.SentenceUtils;
 import edu.stanford.nlp.math.ArrayMath;
 import edu.stanford.nlp.math.SloppyMath;
 import edu.stanford.nlp.sequences.BestSequenceFinder;
 import edu.stanford.nlp.sequences.ExactBestSequenceFinder;
 import edu.stanford.nlp.sequences.SequenceModel;
 import edu.stanford.nlp.tagger.common.Tagger;
-import edu.stanford.nlp.util.ArrayUtils;
-import edu.stanford.nlp.util.ConfusionMatrix;
-import edu.stanford.nlp.util.Generics;
-import edu.stanford.nlp.util.Pair;
+import edu.stanford.nlp.util.*;
 
 import java.io.OutputStreamWriter;
 import java.io.PrintWriter;
@@ -39,7 +34,10 @@ import java.text.DecimalFormat;
  * @author Michel Galley
  * @version 1.0
  */
-public class TestSentence implements SequenceModel {
+public class TestSentence implements SequenceModel  {
+
+  /** A logger for this class */
+  private static Redwood.RedwoodChannels log = Redwood.channels(TestSentence.class);
 
   protected final boolean VERBOSE;
   protected static final String naTag = "NA";
@@ -105,22 +103,22 @@ public class TestSentence implements SequenceModel {
    */
   public ArrayList<TaggedWord> tagSentence(List<? extends HasWord> s,
                                            boolean reuseTags) {
-    this.origWords = new ArrayList<HasWord>(s);
+    this.origWords = new ArrayList<>(s);
     int sz = s.size();
-    this.sent = new ArrayList<String>(sz + 1);
-    for (int j = 0; j < sz; j++) {
+    this.sent = new ArrayList<>(sz + 1);
+    for (HasWord value1 : s) {
       if (maxentTagger.wordFunction != null) {
-        sent.add(maxentTagger.wordFunction.apply(s.get(j).word()));
+        sent.add(maxentTagger.wordFunction.apply(value1.word()));
       } else {
-        sent.add(s.get(j).word());
+        sent.add(value1.word());
       }
     }
     sent.add(Tagger.EOS_WORD);
     if (reuseTags) {
-      this.originalTags = new ArrayList<String>(sz + 1);
-      for (int j = 0; j < sz; ++j) {
-        if (s.get(j) instanceof HasTag) {
-          originalTags.add(((HasTag) s.get(j)).tag());
+      this.originalTags = new ArrayList<>(sz + 1);
+      for (HasWord value : s) {
+        if (value instanceof HasTag) {
+          originalTags.add(((HasTag) value).tag());
         } else {
           originalTags.add(null);
         }
@@ -129,7 +127,7 @@ public class TestSentence implements SequenceModel {
     }
     size = sz + 1;
     if (VERBOSE) {
-      System.err.println("Sentence is " + Sentence.listToString(sent, false, tagSeparator));
+      log.info("Sentence is " + SentenceUtils.listToString(sent, false, tagSeparator));
     }
     init();
     result = testTagInference();
@@ -174,7 +172,7 @@ public class TestSentence implements SequenceModel {
   ArrayList<TaggedWord> getTaggedSentence() {
     final boolean hasOffset;
     hasOffset = origWords != null && origWords.size() > 0 && (origWords.get(0) instanceof HasOffset);
-    ArrayList<TaggedWord> taggedSentence = new ArrayList<TaggedWord>();
+    ArrayList<TaggedWord> taggedSentence = new ArrayList<>();
     for (int j = 0; j < size - 1; j++) {
       String tag = finalTags[j];
       TaggedWord w = new TaggedWord(sent.get(j), tag);
@@ -223,16 +221,16 @@ public class TestSentence implements SequenceModel {
         double[] probs = getHistories(tags, h);
         ArrayMath.logNormalize(probs);
 
-        // System.err.println("word: " + pairs.getWord(current));
-        // System.err.println("tags: " + Arrays.asList(tags));
-        // System.err.println("probs: " + ArrayMath.toString(probs));
+        // log.info("word: " + pairs.getWord(current));
+        // log.info("tags: " + Arrays.asList(tags));
+        // log.info("probs: " + ArrayMath.toString(probs));
 
         for (int j = 0; j < tags.length; j++) {
           // score the j-th tag
           String tag = tags[j];
           boolean approximate = maxentTagger.hasApproximateScoring();
           int tagindex = approximate ? maxentTagger.tags.getIndex(tag) : j;
-          // System.err.println("Mapped from j="+ j + " " + tag + " to " + tagindex);
+          // log.info("Mapped from j="+ j + " " + tag + " to " + tagindex);
           probabilities[current][hyp][tagindex] = probs[j];
         }
       } // for current
@@ -315,6 +313,9 @@ public class TestSentence implements SequenceModel {
 
   private void runTagInference() {
     this.initializeScorer();
+    if (Thread.interrupted()) {  // Allow interrupting
+      throw new RuntimeInterruptedException();
+    }
 
     BestSequenceFinder ti = new ExactBestSequenceFinder();
       //new BeamBestSequenceFinder(50);
@@ -323,6 +324,10 @@ public class TestSentence implements SequenceModel {
     finalTags = new String[bestTags.length];
     for (int j = 0; j < size; j++) {
       finalTags[j] = maxentTagger.tags.getTag(bestTags[j + leftWindow()]);
+    }
+
+    if (Thread.interrupted()) {  // Allow interrupting
+      throw new RuntimeInterruptedException();
     }
     cleanUpScorer();
   }
@@ -705,8 +710,8 @@ public class TestSentence implements SequenceModel {
   @Override
   public double[] scoresOf(int[] tags, int pos) {
     if (DBG) {
-      System.err.println("scoresOf(): length of tags is " + tags.length + "; position is " + pos + "; endSizePairs = " + endSizePairs + "; size is " + size + "; leftWindow is " + leftWindow());
-      System.err.println("  History h = new History(" + (endSizePairs - size) + ", " + (endSizePairs - 1) + ", " + (endSizePairs - size + pos - leftWindow()) + ")");
+      log.info("scoresOf(): length of tags is " + tags.length + "; position is " + pos + "; endSizePairs = " + endSizePairs + "; size is " + size + "; leftWindow is " + leftWindow());
+      log.info("  History h = new History(" + (endSizePairs - size) + ", " + (endSizePairs - 1) + ", " + (endSizePairs - size + pos - leftWindow()) + ")");
     }
     history.init(endSizePairs - size, endSizePairs - 1, endSizePairs - size + pos - leftWindow());
     setHistory(pos, history, tags);

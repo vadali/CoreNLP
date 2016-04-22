@@ -67,7 +67,7 @@
  * (TODO) Saving Classifier out to file (from <code>LearningExperiment</code>)
  * <pre>
  * private static void saveClassifierToFile(LinearClassifier classifier, String serializePath) {
- * System.err.print("Serializing classifier to " + serializePath + "...");
+ * log.info("Serializing classifier to " + serializePath + "...");
  * try {
  * ObjectOutputStream oos;
  * if (serializePath.endsWith(".gz")) {
@@ -77,7 +77,7 @@
  * }
  * oos.writeObject(classifier);
  * oos.close();
- * System.err.println("done.");
+ * Logging.logger(this.getClass()).info("done.");
  * } catch (Exception e) {
  * e.printStackTrace();
  * throw new RuntimeException("Serialization failed: "+e.getMessage());
@@ -88,4 +88,5 @@
  * @author Dan Klein
  * @author Eric Yeh
  */
-package edu.stanford.nlp.classify;
+package edu.stanford.nlp.classify; 
+import edu.stanford.nlp.util.logging.Redwood;

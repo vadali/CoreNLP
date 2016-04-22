@@ -10,7 +10,6 @@ import org.junit.Ignore;
 import org.junit.Test;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 import static org.junit.Assert.*;
 
@@ -27,6 +26,7 @@ public class OpenIEITest {
     setProperty("openie.ignoreaffinity", "false");
     setProperty("openie.max_entailments_per_clause", "1000");
     setProperty("openie.triple.strict", "true");
+//    setProperty("openie.splitter.model", "/home/gabor/tmp/clauseSearcher.ser.gz");
 
     setProperty("ssplit.isOneSentence", "true");
     setProperty("tokenize.class", "PTBTokenizer");
@@ -48,13 +48,16 @@ public class OpenIEITest {
         found = true;
       }
     }
-    assertTrue("The extraction '" + expected + "' was not found in '" + text + "'", found);
+    assertTrue("The extraction (" + expected.replace("\t", "; ") + ") was not found in '" + text + "'", found);
   }
 
-  public void assertExtracted(Set<String> expected, String text) {
+  public void assertExtracted(Set<String> expectedSet, String text) {
     Collection<RelationTriple> extractions = annotate(text).get(NaturalLogicAnnotations.RelationTriplesAnnotation.class);
-    Set<String> guess = extractions.stream().filter(x -> x.confidence > 0.1).map(RelationTriple::toString).collect(Collectors.toSet());
-    assertEquals(StringUtils.join(expected.stream().sorted(), "\n").toLowerCase(), StringUtils.join(guess.stream().map(x -> x.substring(x.indexOf("\t") + 1)).sorted(), "\n").toLowerCase());
+    String actual = StringUtils.join(
+        extractions.stream().map(x -> x.toString().substring(x.toString().indexOf("\t") + 1).toLowerCase()).sorted(),
+        "\n");
+    String expected = StringUtils.join(expectedSet.stream().map(String::toLowerCase).sorted(), "\n");
+    assertEquals(expected, actual);
   }
 
   public void assertEntailed(String expected, String text) {
@@ -86,11 +89,28 @@ public class OpenIEITest {
   }
 
   @Test
+  public void testPaperExamples() {
+//    assertExtracted("Fish\tlike to\tswim", "Fish like to swim");  // Parse is persistently broken
+
+//    assertExtracted("Tom\tfighting\tJerry", "Tom and Jerry are fighting.");  // Collapsed CC Processed tree incorrectly adds nsubj from fighting->jrry
+    assertExtracted("cats\tis with\ttails", "There are cats with tails.");
+    assertExtracted("IBM\thas\tresearch group", "IBM's research group.");
+    assertExtracted("rabbits\teat\tvegetables", "All rabbits eat vegetables.");
+  }
+
+  @Test
+  public void testOtherExamples() {
+    // Preconj (but, parser currently fails)
+//    assertExtracted("Mary\tis\tbeautiful", "Mary is both beautiful and smart.");
+//    assertExtracted(Collections.EMPTY_SET, "Mary is neither beautiful and smart.");
+  }
+
+  @Test
   public void testExtractionsGeorgeBoyd() {
     assertExtracted(new HashSet<String>() {{
+      add("George Boyd\tjoined on\t21 february 2013");
       add("George Boyd\tjoined for\tremainder");
       add("George Boyd\tjoined for\tremainder of season");
-      add("George Boyd\tjoined on\t21 february 2013");
       add("George Boyd\tjoined on\tloan");
       add("George Boyd\tjoined on\tloan from peterborough united");
     }}, "On 21 February 2013 George Boyd joined on loan from Peterborough United for the remainder of the season.");
@@ -106,6 +126,12 @@ public class OpenIEITest {
       add("Barack Hussein Obama II\tis\tPresident");
 //      add("Barack Hussein Obama II\tis\tcurrent President");
       add("Barack Hussein Obama II\tis\t44th President");
+      // These are a bit fishy...
+      add("first African American\thold\toffice");
+      add("first American\thold\toffice");
+      add("African American\thold\toffice");
+      add("American\thold\toffice");
+      // End odd extractions
     }}, "Barack Hussein Obama II is the 44th and current President of the United States, and the first African American to hold the office.");
   }
 
@@ -131,6 +157,7 @@ public class OpenIEITest {
       add("He\twas\tcommunity organizer");
 //      add("He\tearning\tlaw degree");
       add("He\tearning\this law degree");
+      add("community organizer\tis in\tChicago");
     }}, "He was a community organizer in Chicago before earning his law degree.");
   }
 
@@ -187,6 +214,30 @@ public class OpenIEITest {
 //      add("Republican nominee John McCain\twas inaugurated as\tpresident on january 20 2009");
       // note[gabor] end wrong extractions
     }}, "He then defeated Republican nominee John McCain in the general election, and was inaugurated as president on January 20, 2009.");
+  }
+
+  @Test
+  public void testThereIsNoDoubt() {
+    assertExtracted(new HashSet<String>() {{
+      add("I\tam\tgreat");
+    }}, "There is no doubt that I am great.");
+    assertExtracted(new HashSet<String>() {{
+      add("cats\thave\ttails");
+    }}, "There is no doubt that cats have tails.");
+    assertExtracted(new HashSet<String>() {{
+    }}, "There is doubt that cats have tails.");
+  }
+
+
+  @Test
+  public void testChessIsNotAPhysicalSport() {
+    assertExtracted(new HashSet<String>() {{
+      add("Chess\tis\tphysical");
+      add("Chess\tis\tphysical sport");
+      add("Chess\tis\tsport");
+    }}, "Chess is a physical sport");
+    assertExtracted(new HashSet<String>() {{
+    }}, "Chess is not a physical sport");
   }
 
   @Test
